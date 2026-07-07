@@ -1,0 +1,53 @@
+Weekly Product Sync — "Northwind" mobile marketplace app
+Attendees: Dana (Product), Marco (Engineering), Priya (Design), Sam (QA)
+Duration: ~35 min (auto-transcribed, lightly cleaned)
+
+---
+
+Dana: Okay, let's get going. Main thing today is the checkout redesign and then we need to talk about the crash reports from last week. Marco, want to start with where checkout is?
+
+Marco: Sure. So the new checkout flow is basically code-complete on the happy path. You can add to cart, pick a shipping method, pay with card, done. What's NOT done is the saved-cards part — we ran into a problem with the payment provider's tokenization, their sandbox keeps rejecting our test tokens. I've got a ticket open with them but no answer yet.
+
+Dana: How blocking is that? Can we ship checkout without saved cards?
+
+Marco: Yeah, we can. Saved cards can be a fast-follow. I'd say if the provider gets back to us this week we squeeze it in, otherwise it slips to next sprint.
+
+Dana: Let's do that. Ship checkout without saved cards, saved cards is a fast-follow, and Marco you keep chasing the provider. Priya, anything on design that's still open for checkout?
+
+Priya: One thing. The error states. Right now if a payment fails, the screen just shows a generic red banner that says "Something went wrong." That's bad. We talked before about showing the actual reason — card declined, expired, network issue. I have the designs ready, I'll drop them in Figma today. It's not a huge build but someone needs to wire it up.
+
+Marco: I can take that, it's maybe half a day once the copy is final.
+
+Dana: Good. Priya, can you also get the error copy reviewed by legal? Some of those decline messages have compliance wording we can't just make up.
+
+Priya: Right, I'll ping legal. Good catch.
+
+Dana: Okay. QA — Sam, the crash reports. This is the scary one. What are we seeing?
+
+Sam: So since the last release we've got a spike in crashes on the product detail screen. It's about 4% of sessions on Android, almost nothing on iOS. From the logs it looks like it happens when a product has no images — the image carousel tries to render and hits a null. It's not every product, just ones where the seller didn't upload photos.
+
+Marco: Oh. Yeah, that would do it. We never handle the empty-images case, we just assume there's at least one.
+
+Sam: Right. And it's not rare because a lot of new sellers skip photos. Users tap a product, app dies. That's a really bad first impression.
+
+Dana: Okay this jumps the queue. This is our top priority. Marco, who can pick it up?
+
+Marco: I'll put Alex on it first thing tomorrow. It's a small fix — show a placeholder image when there are no photos — but we need to test it properly because the carousel is shared across a few screens.
+
+Sam: I'll write regression cases for the empty-images path and re-run the carousel suite once the fix is in.
+
+Dana: Perfect. Let's also add a rule that sellers get nudged to add at least one photo, but that's a separate thing, product side, I'll write it up. Not this sprint.
+
+Sam: One more, smaller. Search. When you search and get zero results, the spinner just keeps spinning forever instead of showing "no results." People think it's broken and force-close. It's been there a while, low severity but annoying.
+
+Marco: That one's easy, honestly. Frontend only. I'll fold it in with the error-states work.
+
+Dana: Great. Let's talk risks quickly before we wrap. The provider dependency worries me — if saved cards keeps slipping we should just communicate clearly that it's a fast-follow and not promise it in the release notes. Second risk: we're pretty thin on Android testing devices, Sam only has two physical devices and the crash was Android-specific. Sam, do we need to fix that?
+
+Sam: Yeah honestly it'd help. If I had access to a device farm or even two more phones I could catch these Android-only things earlier. The product-detail crash could've been caught pre-release if I'd tested on more Android versions.
+
+Dana: Okay, I'll raise the device budget with finance. Put that down as a blocker for QA coverage.
+
+Marco: Last thing from me — the analytics events for checkout aren't instrumented yet. If we ship checkout we'll be flying blind on funnel drop-off. It's not blocking release but we really want it in before we start optimizing.
+
+Dana: Agreed, let's get analytics on checkout in this sprint if we can, right after the crash fix. Okay, anything else? No? Good sync, thanks everyone.
