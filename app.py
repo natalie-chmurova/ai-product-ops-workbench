@@ -10,6 +10,7 @@ Run it with:  streamlit run app.py
 
 from __future__ import annotations
 
+import html
 from pathlib import Path
 
 import streamlit as st
@@ -30,16 +31,126 @@ PRIORITY = {
     3: ("Normal", "#6c8cff"),
     4: ("Low", "#8a94a6"),
 }
+DESC_LABELS = ("Цель:", "Контекст:", "Что нужно сделать:", "Критерии приемки:")
 
 st.set_page_config(page_title="AI Product Ops Workbench", page_icon="🛠️", layout="wide")
 
 
+# ---------- styling ----------
+st.markdown(
+    """
+    <style>
+      :root {
+        --bg:#0f1216; --panel:#171b21; --line:#262c34; --panel2:#1c222a;
+        --text:#e6e9ee; --muted:#9aa4b2; --soft:#cdd3db; --accent:#8ea2ff;
+      }
+      .block-container { padding-top: 2.4rem; max-width: 1440px; }
+      h1, h2, h3 { letter-spacing: -0.01em; }
+      /* metrics strip */
+      .wb-metrics { display:flex; gap:10px; margin:2px 0 18px; flex-wrap:wrap; }
+      .wb-metric { background:var(--panel); border:1px solid var(--line);
+        border-radius:12px; padding:10px 16px; min-width:92px; }
+      .wb-metric .n { font-size:22px; font-weight:750; color:var(--text); line-height:1.1;
+        font-variant-numeric: tabular-nums; }
+      .wb-metric .l { font-size:10.5px; color:var(--muted); text-transform:uppercase;
+        letter-spacing:.07em; margin-top:2px; }
+      .wb-metric.accent .n { color:#ff8090; }
+      /* task card */
+      .wb-card { position:relative; background:var(--panel); border:1px solid var(--line);
+        border-radius:14px; padding:15px 18px 14px 20px; margin-bottom:13px; overflow:hidden; }
+      .wb-card::before { content:''; position:absolute; left:0; top:0; bottom:0; width:4px;
+        background:var(--stripe); }
+      .wb-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+      .wb-title { font-weight:650; font-size:14.5px; color:var(--text); line-height:1.35; }
+      .wb-pill { flex:none; font-size:10.5px; font-weight:700; padding:3px 11px;
+        border-radius:999px; color:#0f1216; white-space:nowrap; }
+      .wb-owner { color:var(--muted); font-size:12.5px; margin:7px 0 9px; }
+      .wb-owner b { color:var(--soft); font-weight:600; }
+      .wb-desc { font-size:12.7px; color:var(--soft); line-height:1.5; }
+      .wb-desc .lbl { color:var(--accent); font-weight:600; }
+      .wb-tags { margin-top:11px; display:flex; flex-wrap:wrap; gap:6px; }
+      .wb-tag { font-size:10.5px; color:var(--muted); border:1px solid var(--line);
+        border-radius:6px; padding:2px 8px; }
+      /* tame the big markdown headings coming from sprint / triage docs */
+      [data-testid="stMarkdownContainer"] h1 { font-size:19px; margin:4px 0 8px; }
+      [data-testid="stMarkdownContainer"] h2 { font-size:13px; text-transform:uppercase;
+        letter-spacing:.06em; color:var(--muted); margin:14px 0 6px; }
+      /* markdown tables inside tabs */
+      [data-testid="stMarkdownContainer"] table { border-collapse:collapse; width:100%;
+        font-size:12.7px; margin:8px 0; }
+      [data-testid="stMarkdownContainer"] th, [data-testid="stMarkdownContainer"] td {
+        border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+      [data-testid="stMarkdownContainer"] th { background:var(--panel2); color:var(--muted); }
+      /* subtitle chip */
+      .wb-chip { display:inline-block; font-size:11px; color:var(--muted);
+        border:1px solid var(--line); border-radius:999px; padding:2px 10px; margin-left:4px; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
 # ---------- header ----------
 st.title("🛠️ AI Product Ops Workbench")
-st.caption(
+st.markdown(
     "Turn a raw meeting transcript into ClickUp-ready tasks, a sprint summary, "
-    "and a bug triage table — in one click."
+    "and a bug triage table — in one click. "
+    "<span class='wb-chip'>synthetic demo data</span>",
+    unsafe_allow_html=True,
 )
+st.write("")
+
+
+# ---------- helpers ----------
+def _format_description(desc: str) -> str:
+    safe = html.escape(desc)
+    for label in DESC_LABELS:
+        safe = safe.replace(label, f"<span class='lbl'>{label}</span>")
+    safe = safe.replace("\n", "<br>").replace("<br>- ", "<br>• ")
+    return safe
+
+
+def render_metrics(context: dict, tasks: list) -> None:
+    urgent = sum(1 for t in tasks if t.get("priority") == 1)
+    bugs = len(context.get("bugs", []))
+    decisions = len(context.get("decisions", []))
+    cards = [
+        ("n", len(tasks), "Tasks"),
+        ("accent", urgent, "Urgent"),
+        ("n", bugs, "Bugs"),
+        ("n", decisions, "Decisions"),
+    ]
+    html_parts = ['<div class="wb-metrics">']
+    for kind, num, label in cards:
+        cls = "wb-metric accent" if kind == "accent" else "wb-metric"
+        html_parts.append(f'<div class="{cls}"><div class="n">{num}</div><div class="l">{label}</div></div>')
+    html_parts.append("</div>")
+    st.markdown("".join(html_parts), unsafe_allow_html=True)
+
+
+def render_tasks(tasks: list) -> None:
+    for task in tasks:
+        label, color = PRIORITY.get(task.get("priority", 3), PRIORITY[3])
+        name = html.escape(str(task.get("name", "Untitled task")))
+        owner = html.escape(str(task.get("owner", "Unassigned")))
+        desc = _format_description(str(task.get("description", "")))
+        tags = "".join(
+            f"<span class='wb-tag'>{html.escape(str(t))}</span>" for t in task.get("tags", [])
+        )
+        st.markdown(
+            f"""
+            <div class="wb-card" style="--stripe:{color}">
+              <div class="wb-head">
+                <div class="wb-title">{name}</div>
+                <div class="wb-pill" style="background:{color}">{label}</div>
+              </div>
+              <div class="wb-owner">👤 Owner: <b>{owner}</b></div>
+              <div class="wb-desc">{desc}</div>
+              <div class="wb-tags">{tags}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 
 # ---------- input ----------
@@ -50,33 +161,12 @@ with left:
     transcript = st.text_area(
         "Paste a transcript, or use the built-in demo:",
         value=DEMO_TRANSCRIPT,
-        height=420,
-        label_visibility="visible",
+        height=440,
     )
     col_a, col_b = st.columns([1, 1])
     run = col_a.button("✨ Generate artifacts", type="primary", use_container_width=True)
     if col_b.button("↺ Reset to demo", use_container_width=True):
         st.rerun()
-
-
-def render_tasks(tasks: list) -> None:
-    st.markdown(f"**{len(tasks)} tasks generated**")
-    for task in tasks:
-        label, color = PRIORITY.get(task.get("priority", 3), PRIORITY[3])
-        with st.container(border=True):
-            head = st.columns([5, 1])
-            head[0].markdown(f"**{task.get('name', 'Untitled task')}**")
-            head[1].markdown(
-                f"<span style='background:{color};color:#0f1216;padding:2px 10px;"
-                f"border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap;'>"
-                f"{label}</span>",
-                unsafe_allow_html=True,
-            )
-            st.caption(f"Owner: {task.get('owner', 'Unassigned')}")
-            st.markdown(task.get("description", "").replace("\n", "  \n"))
-            tags = task.get("tags", [])
-            if tags:
-                st.markdown(" ".join(f"`{t}`" for t in tags))
 
 
 # ---------- run + output ----------
@@ -95,6 +185,7 @@ with right:
                 st.write("Stage 3/3 — done")
                 status.update(label="Done ✓", state="complete", expanded=False)
 
+            render_metrics(context, tasks)
             tab_tasks, tab_sprint, tab_triage = st.tabs(
                 ["Tasks", "Sprint Summary", "Bug Triage"]
             )

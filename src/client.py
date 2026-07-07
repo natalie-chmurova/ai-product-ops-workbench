@@ -44,8 +44,12 @@ def load_prompt(name: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def ask(system_prompt: str, user_content: str, max_tokens: int = 4000) -> str:
-    """Send one request to Claude and return the plain text reply."""
+def _ask_raw(system_prompt: str, user_content: str, max_tokens: int) -> tuple[str, str]:
+    """Send one request to Claude. Returns (text, stop_reason).
+
+    stop_reason == "max_tokens" means the reply was cut off by the token limit —
+    a truncated reply is the usual cause of "invalid JSON".
+    """
     client = _get_client()
     try:
         message = client.messages.create(
@@ -56,7 +60,14 @@ def ask(system_prompt: str, user_content: str, max_tokens: int = 4000) -> str:
         )
     except Exception as exc:  # network / API / auth problems
         raise WorkbenchError(f"Could not reach the Claude API: {exc}") from exc
-    return "".join(block.text for block in message.content if block.type == "text")
+    text = "".join(block.text for block in message.content if block.type == "text")
+    return text, (message.stop_reason or "")
+
+
+def ask(system_prompt: str, user_content: str, max_tokens: int = 4000) -> str:
+    """Send one request to Claude and return the plain text reply."""
+    text, _ = _ask_raw(system_prompt, user_content, max_tokens)
+    return text
 
 
 def _extract_json(text: str) -> str:
@@ -75,21 +86,35 @@ def _extract_json(text: str) -> str:
     return text.strip()
 
 
+TOKEN_CEILING = 16000
+
+
 def ask_json(system_prompt: str, user_content: str, max_tokens: int = 4000):
-    """Ask Claude for JSON and parse it. Retries once if the reply isn't valid JSON."""
-    for attempt in (1, 2):
-        reply = ask(system_prompt, user_content, max_tokens=max_tokens)
+    """Ask Claude for JSON and parse it, healing the two common failure modes.
+
+    - If the reply was truncated by the token limit (the usual cause of broken
+      JSON), retry with a larger limit so the full array/object comes back.
+    - Otherwise, nudge the model to return JSON only and try again.
+    """
+    tokens = max_tokens
+    prompt = user_content
+    for attempt in (1, 2, 3):
+        reply, stop_reason = _ask_raw(system_prompt, prompt, tokens)
         try:
             return json.loads(_extract_json(reply))
         except json.JSONDecodeError:
-            if attempt == 2:
+            if attempt == 3:
                 raise WorkbenchError(
-                    "Claude did not return valid JSON after two tries. "
+                    "Claude did not return valid JSON after several tries. "
                     "This is usually temporary — please run again."
                 )
-            # Nudge the model to be stricter on the retry.
-            user_content = (
-                user_content
-                + "\n\nIMPORTANT: Your previous reply was not valid JSON. "
-                "Return ONLY the JSON, with no extra text or fences."
-            )
+            if stop_reason == "max_tokens" and tokens < TOKEN_CEILING:
+                # The reply was cut off — give it more room instead of re-asking.
+                tokens = min(tokens * 2, TOKEN_CEILING)
+            else:
+                # Nudge the model to be stricter on the retry.
+                prompt = (
+                    user_content
+                    + "\n\nIMPORTANT: Your previous reply was not valid JSON. "
+                    "Return ONLY the JSON, with no extra text or fences."
+                )

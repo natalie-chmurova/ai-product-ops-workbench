@@ -19,4 +19,4 @@ def extract_context(transcript: str) -> dict:
         )
     system_prompt = load_prompt("extract")
     user_content = f"Here is the meeting transcript:\n\n{transcript}"
-    return ask_json(system_prompt, user_content, max_tokens=4000)
+    return ask_json(system_prompt, user_content, max_tokens=6000)

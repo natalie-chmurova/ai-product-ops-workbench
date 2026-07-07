@@ -24,7 +24,8 @@ def build_tasks(context: dict) -> list:
     """Structured summary -> list of ClickUp-ready task dicts."""
     system_prompt = load_prompt("tasks")
     user_content = f"Here is the structured meeting summary:\n\n{_summary_as_text(context)}"
-    tasks = ask_json(system_prompt, user_content, max_tokens=4000)
+    # A full board of detailed tasks can be long, so give it generous headroom.
+    tasks = ask_json(system_prompt, user_content, max_tokens=8000)
     # The prompt asks for an array; be forgiving if it comes wrapped in a key.
     if isinstance(tasks, dict):
         tasks = tasks.get("tasks", [])
