@@ -31,9 +31,20 @@ first-class and editable without touching code.
 
 ## Run it
 
+**Web app (point-and-click):**
+
 ```bash
 pip install -r requirements.txt
 cp .env.example .env          # then paste your Anthropic API key into .env
+streamlit run app.py          # opens a browser: paste a transcript, click Generate
+```
+
+On macOS you can also just double-click `start.command` — it sets up the
+environment on first run and launches the app.
+
+**Command line (batch / scripting):**
+
+```bash
 python workbench.py samples/transcript_demo.txt
 open outputs/report.html      # macOS ("xdg-open" on Linux)
 ```
