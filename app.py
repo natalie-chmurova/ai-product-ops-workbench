@@ -11,12 +11,14 @@ Run it with:  streamlit run app.py
 from __future__ import annotations
 
 import html
+import os
 from pathlib import Path
 
 import streamlit as st
 from dotenv import load_dotenv
 
 from src.artifacts import build_bug_triage, build_sprint_summary, build_tasks
+from src.clickup import get_lists, push_tasks
 from src.client import WorkbenchError
 from src.extract import extract_context
 
@@ -153,6 +155,48 @@ def render_tasks(tasks: list) -> None:
         )
 
 
+@st.cache_data(show_spinner=False, ttl=300)
+def _cached_lists() -> list:
+    try:
+        return get_lists()
+    except Exception:
+        return []
+
+
+def render_clickup(tasks: list) -> None:
+    """A row that pushes the generated tasks into a real ClickUp list."""
+    if not os.environ.get("CLICKUP_API_TOKEN"):
+        return  # integration not configured — hide the control entirely
+    lists = _cached_lists()
+    default_id = os.environ.get("CLICKUP_LIST_ID", "")
+    with st.container(border=True):
+        c1, c2 = st.columns([2, 1])
+        if lists:
+            labels = [f"{l['space']} / {l['name']}" for l in lists]
+            ids = [l["id"] for l in lists]
+            idx = ids.index(default_id) if default_id in ids else 0
+            choice = c1.selectbox("ClickUp list", labels, index=idx, label_visibility="collapsed")
+            target = ids[labels.index(choice)]
+        else:
+            target = default_id
+            c1.caption("Sending to the default list from .env")
+        send = c2.button("📤 Send to ClickUp", use_container_width=True)
+        if send:
+            try:
+                with st.spinner("Creating tasks in ClickUp…"):
+                    summary = push_tasks(tasks, target)
+                if summary["created"]:
+                    st.success(f"Created {summary['created']} of {summary['total']} tasks in ClickUp.")
+                    st.markdown(f"➡️ [Open the ClickUp board]({summary['list_url']})")
+                if summary["failed"]:
+                    st.warning(
+                        f"{len(summary['failed'])} task(s) didn't go through: "
+                        + "; ".join(summary["failed"][:3])
+                    )
+            except (WorkbenchError, ValueError) as exc:
+                st.error(str(exc))
+
+
 # ---------- input ----------
 left, right = st.columns([1, 1.35], gap="large")
 
@@ -184,19 +228,25 @@ with right:
                 triage_md = build_bug_triage(context)
                 st.write("Stage 3/3 — done")
                 status.update(label="Done ✓", state="complete", expanded=False)
-
-            render_metrics(context, tasks)
-            tab_tasks, tab_sprint, tab_triage = st.tabs(
-                ["Tasks", "Sprint Summary", "Bug Triage"]
-            )
-            with tab_tasks:
-                render_tasks(tasks)
-            with tab_sprint:
-                st.markdown(sprint_md)
-            with tab_triage:
-                st.markdown(triage_md)
-
+            st.session_state["result"] = {
+                "context": context, "tasks": tasks, "sprint": sprint_md, "triage": triage_md,
+            }
         except (WorkbenchError, ValueError) as exc:
+            st.session_state["result"] = None
             st.error(str(exc))
-    else:
+
+    result = st.session_state.get("result")
+    if not result:
         st.info("Paste a transcript on the left and click **Generate artifacts**.")
+    else:
+        render_metrics(result["context"], result["tasks"])
+        render_clickup(result["tasks"])
+        tab_tasks, tab_sprint, tab_triage = st.tabs(
+            ["Tasks", "Sprint Summary", "Bug Triage"]
+        )
+        with tab_tasks:
+            render_tasks(result["tasks"])
+        with tab_sprint:
+            st.markdown(result["sprint"])
+        with tab_triage:
+            st.markdown(result["triage"])

@@ -29,6 +29,10 @@ A small three-stage pipeline built on the [Claude API](https://console.anthropic
 Prompts live in [`prompts/`](prompts/) as plain Markdown — the product logic is
 first-class and editable without touching code.
 
+**Send to ClickUp (optional):** with a `CLICKUP_API_TOKEN` set, the web app shows a
+"Send to ClickUp" button that creates the generated tasks — titled, prioritized, and
+tagged — directly in a ClickUp list, so a meeting turns into a populated board in one click.
+
 ## Run it
 
 **Web app (point-and-click):**
