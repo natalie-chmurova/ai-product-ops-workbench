@@ -3,7 +3,7 @@
 Turn a messy meeting transcript into the artifacts a product team actually needs —
 **ClickUp-ready tasks, a sprint summary, and a bug triage table** — in one command.
 
-### **[▶ Live demo](https://natalie-chmurova.github.io/ai-product-ops-workbench/)** · [📄 Case study](CASE_STUDY.md)
+### **[▶ Live demo](https://natalie-chmurova.github.io/ai-product-ops-workbench/)** · [📄 Case study](CASE_STUDY.md) · [⚙️ n8n version](https://natalie-chmurova.github.io/ai-product-ops-workbench/n8n-case.html)
 
 [![AI Product Ops Workbench: a raw meeting transcript on the left, AI-generated ClickUp-ready tasks, a sprint summary and a bug triage table on the right](docs/report-preview.png)](https://natalie-chmurova.github.io/ai-product-ops-workbench/)
 
