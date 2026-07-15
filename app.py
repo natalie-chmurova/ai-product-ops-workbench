@@ -33,7 +33,7 @@ PRIORITY = {
     3: ("Normal", "#6c8cff"),
     4: ("Low", "#8a94a6"),
 }
-DESC_LABELS = ("Цель:", "Контекст:", "Что нужно сделать:", "Критерии приемки:")
+DESC_LABELS = ("Goal:", "Context:", "What needs to be done:", "Acceptance criteria:")
 
 st.set_page_config(page_title="AI Product Ops Workbench", page_icon="🛠️", layout="wide")
 
