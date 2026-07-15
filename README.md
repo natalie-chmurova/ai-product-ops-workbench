@@ -3,6 +3,10 @@
 Turn a messy meeting transcript into the artifacts a product team actually needs —
 **ClickUp-ready tasks, a sprint summary, and a bug triage table** — in one command.
 
+**[📄 Read the case study](CASE_STUDY.md)**
+
+![AI Product Ops Workbench: a raw meeting transcript on the left, AI-generated ClickUp-ready tasks, a sprint summary and a bug triage table on the right](docs/report-preview.png)
+
 Product teams lose hours turning call recordings and raw notes into structured work.
 This tool does the boring part: it reads the transcript, figures out what was decided,
 who owns what, and what's broken, then writes the documents for you.
