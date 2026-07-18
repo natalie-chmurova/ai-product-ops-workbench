@@ -1,0 +1,75 @@
+{
+  "transcript": "samples/transcript_demo.txt",
+  "note": "Ground truth for task extraction. 'must' = a real task any competent PM would create. 'debatable' = reasonable to include or fold into another task; found = fine, missed = not penalized.",
+  "tasks": [
+    {
+      "id": "gt1",
+      "summary": "Chase the payment provider about sandbox rejecting test tokens (saved cards blocked)",
+      "owner_hint": "Marco",
+      "must": true
+    },
+    {
+      "id": "gt2",
+      "summary": "Finalize and hand off payment error-state designs (card declined / expired / network) in Figma",
+      "owner_hint": "Priya",
+      "must": true
+    },
+    {
+      "id": "gt3",
+      "summary": "Implement / wire up the new payment error states in checkout",
+      "owner_hint": "Marco",
+      "must": true
+    },
+    {
+      "id": "gt4",
+      "summary": "Get payment decline error copy reviewed by legal (compliance wording)",
+      "owner_hint": "Priya",
+      "must": true
+    },
+    {
+      "id": "gt5",
+      "summary": "Fix Android crash on product detail screen when a product has no images (placeholder in carousel)",
+      "owner_hint": "Alex",
+      "must": true
+    },
+    {
+      "id": "gt6",
+      "summary": "Write regression tests for the empty-images path and re-run the carousel suite",
+      "owner_hint": "Sam",
+      "must": true
+    },
+    {
+      "id": "gt7",
+      "summary": "Raise Android test-device budget (device farm or more phones) with finance",
+      "owner_hint": "Dana",
+      "must": true
+    },
+    {
+      "id": "gt8",
+      "summary": "Instrument checkout funnel analytics this sprint, right after the crash fix",
+      "owner_hint": "Marco",
+      "must": true
+    },
+    {
+      "id": "gt9",
+      "summary": "Fix search zero-results infinite spinner (show a no-results message)",
+      "owner_hint": "Marco",
+      "must": false,
+      "why_debatable": "Marco said he'd fold it into the error-states work — a separate task or part of gt3 are both defensible."
+    },
+    {
+      "id": "gt10",
+      "summary": "Write up the seller photo-nudge idea as product work for a future sprint",
+      "owner_hint": "Dana",
+      "must": false,
+      "why_debatable": "Explicitly 'not this sprint' — a backlog note or a task are both defensible."
+    },
+    {
+      "id": "gt11",
+      "summary": "Ship/prepare checkout release without saved cards (saved cards as fast-follow, keep out of release notes)",
+      "owner_hint": "Dana/Marco",
+      "must": false,
+      "why_debatable": "This is a decision more than a task; a release-prep task is a reasonable materialization."
+    }
+  ]
+}

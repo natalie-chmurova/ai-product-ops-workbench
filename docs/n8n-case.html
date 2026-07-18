@@ -152,10 +152,13 @@
   routes work to the human. Structured output, tolerant parsing, and escalation rules matter more
   than the happy path.</p>
 
-  <h2>Next iteration</h2>
-  <p><b>Evals:</b> a labeled ground-truth transcript and an LLM-as-judge harness measuring
-  extraction precision/recall across runs — so prompt changes are tuned against numbers,
-  not vibes.</p>
+  <h2>Evals</h2>
+  <p>Extraction is measured, not vibes-checked: a labeled ground-truth transcript
+  (8 must-have + 3 debatable tasks) and an <b>LLM-as-judge harness</b> scoring
+  precision/recall per run. Current pipeline: <b>100% recall · 100% precision</b> over
+  3 runs on the benchmark transcript
+  (<a href="https://github.com/natalie-chmurova/ai-product-ops-workbench/tree/main/evals">evals/</a>).
+  Next: harder, messier transcripts to stress the numbers.</p>
 
   <div class="links">
     <a href="https://github.com/natalie-chmurova/ai-product-ops-workbench">← Code &amp; repo</a>
