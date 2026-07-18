@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Meeting → ClickUp tasks — an n8n workflow</title>
+<title>Meeting → ClickUp tasks — an agentic n8n workflow with human-in-the-loop</title>
 <style>
   :root{
     --bg:#0f1216; --panel:#171b21; --line:#262c34; --panel2:#1c222a;
     --text:#e6e9ee; --muted:#9aa4b2; --soft:#cdd3db; --accent:#8ea2ff;
-    --p1:#ff5c6c; --p2:#ff9f43; --p3:#6c8cff;
+    --p1:#ff5c6c; --p2:#ff9f43; --p3:#6c8cff; --ok:#3ecf8e;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--text);
@@ -17,7 +17,7 @@
   .eyebrow{color:var(--accent);font-size:12px;font-weight:700;letter-spacing:.14em;
     text-transform:uppercase;margin:0 0 10px;}
   h1{font-size:30px;line-height:1.2;letter-spacing:-.02em;margin:0 0 12px;text-wrap:balance;}
-  .lede{color:var(--soft);font-size:17px;max-width:60ch;margin:0 0 8px;}
+  .lede{color:var(--soft);font-size:17px;max-width:62ch;margin:0 0 8px;}
   .stack{color:var(--muted);font-size:13px;margin:14px 0 0;}
   .stack b{color:var(--soft);font-weight:600;}
   h2{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
@@ -26,18 +26,26 @@
   .metrics{display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 4px;}
   .metric{background:var(--panel);border:1px solid var(--line);border-radius:14px;
     padding:16px 20px;flex:1;min-width:150px;}
-  .metric .n{font-size:24px;font-weight:750;letter-spacing:-.02em;}
+  .metric .n{font-size:22px;font-weight:750;letter-spacing:-.02em;}
   .metric .l{color:var(--muted);font-size:12.5px;margin-top:4px;}
   /* flow diagram */
   .flow-scroll{overflow-x:auto;padding-bottom:6px;}
-  .flow{display:flex;align-items:stretch;gap:0;min-width:640px;}
+  .flow{display:flex;align-items:stretch;gap:0;min-width:760px;}
   .step{background:var(--panel);border:1px solid var(--line);border-radius:14px;
-    padding:16px 16px 14px;width:172px;flex:none;}
-  .step .ico{font-size:20px;}
-  .step .t{font-weight:650;font-size:14px;margin:8px 0 4px;}
-  .step .d{color:var(--muted);font-size:12px;line-height:1.45;}
-  .arrow{display:flex;align-items:center;color:var(--line);flex:none;padding:0 6px;}
-  .arrow span{color:var(--accent);font-size:20px;}
+    padding:14px 14px 12px;width:150px;flex:none;}
+  .step .ico{font-size:19px;}
+  .step .t{font-weight:650;font-size:13.5px;margin:7px 0 4px;}
+  .step .d{color:var(--muted);font-size:11.5px;line-height:1.45;}
+  .arrow{display:flex;align-items:center;color:var(--line);flex:none;padding:0 5px;}
+  .arrow span{color:var(--accent);font-size:18px;}
+  /* branches under the gate */
+  .branches{display:flex;gap:14px;flex-wrap:wrap;margin-top:14px;}
+  .branch{flex:1;min-width:260px;background:var(--panel);border:1px solid var(--line);
+    border-radius:14px;padding:14px 16px;}
+  .branch .head{font-weight:650;font-size:13.5px;margin-bottom:4px;}
+  .branch .d{color:var(--muted);font-size:12.5px;}
+  .branch.ok .head{color:var(--ok);}
+  .branch.ask .head{color:var(--p2);}
   /* cards */
   .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
     padding:18px 20px;margin:0 0 12px;}
@@ -51,75 +59,111 @@
   .links{margin-top:32px;padding-top:22px;border-top:1px solid var(--line);
     display:flex;gap:18px;flex-wrap:wrap;font-size:14px;}
   .foot{color:var(--muted);font-size:12.5px;margin-top:26px;}
+  /* telegram mock */
+  .tg{max-width:520px;background:#12181f;border:1px solid var(--line);border-radius:16px;
+    padding:16px;margin:6px 0 8px;}
+  .tg .from{color:var(--muted);font-size:11.5px;margin-bottom:8px;}
+  .tg .bubble{background:var(--panel2);border-radius:12px;padding:12px 14px;font-size:13px;
+    line-height:1.55;color:var(--soft);}
+  .tg .bubble b{color:var(--text);}
+  .tg .why{color:var(--muted);font-style:italic;}
+  .tg .btns{display:flex;gap:8px;margin-top:10px;}
+  .tg .btn{flex:1;text-align:center;background:#1b2430;border:1px solid var(--line);
+    border-radius:10px;padding:8px 6px;font-size:12.5px;font-weight:600;}
+  .tg .reply{margin-top:10px;background:#16211a;border:1px solid #234232;border-radius:12px;
+    padding:10px 14px;font-size:12.5px;color:var(--soft);}
+  .conf{color:var(--p2);font-weight:700;}
   @media(max-width:560px){h1{font-size:24px}.wrap{padding:32px 18px 48px}}
 </style>
 </head>
 <body>
 <div class="wrap">
 
-  <p class="eyebrow">n8n · agentic automation · portfolio case</p>
-  <h1>Meeting&nbsp;→&nbsp;ClickUp tasks</h1>
-  <p class="lede">An n8n workflow that turns a raw product-meeting transcript into
-  prioritized, ClickUp-ready tasks — automatically, with no manual triage.</p>
-  <p class="stack">Stack: <b>n8n</b> · <b>Claude (Anthropic)</b> · <b>ClickUp API</b></p>
+  <p class="eyebrow">n8n · agentic automation · human-in-the-loop</p>
+  <h1>Meeting&nbsp;→&nbsp;ClickUp tasks, with an agent that knows when to ask</h1>
+  <p class="lede">An n8n workflow that turns a raw product-meeting transcript into prioritized
+  ClickUp tasks — and routes every decision it is <i>not confident about</i> to a human
+  for one-tap approval in Telegram.</p>
+  <p class="stack">Stack: <b>n8n</b> · <b>Claude (Anthropic)</b> · <b>ClickUp API</b> · <b>Telegram</b></p>
 
   <h2>The problem</h2>
   <p>Every product sync produces decisions, owners, and bugs — buried in a messy transcript.
-  Turning that into a structured, prioritized backlog is high-effort, low-leverage work that
-  gets done late, inconsistently, or not at all. Decisions get lost; bugs slip through.</p>
+  Turning that into a structured backlog is high-effort, low-leverage work. Full automation has
+  the opposite failure mode: an LLM will happily make triage calls it should not be making alone.
+  The interesting problem is the middle: <b>automate the confident calls, escalate the doubtful ones.</b></p>
 
   <h2>The workflow</h2>
   <div class="flow-scroll">
     <div class="flow">
       <div class="step"><div class="ico">⚡</div><div class="t">Trigger</div>
-        <div class="d">Kick off the run (manual for demo; a folder/webhook watch in production).</div></div>
+        <div class="d">Manual for demo; folder/webhook watch in production.</div></div>
       <div class="arrow"><span>→</span></div>
-      <div class="step"><div class="ico">🧠</div><div class="t">Claude</div>
-        <div class="d">Reads the transcript, extracts tasks with owner, priority, tags.</div></div>
+      <div class="step"><div class="ico">🧠</div><div class="t">Extract</div>
+        <div class="d">Claude reads the transcript, extracts tasks with tags.</div></div>
       <div class="arrow"><span>→</span></div>
-      <div class="step"><div class="ico">{ }</div><div class="t">Parser</div>
-        <div class="d">Splits the model output into individual, validated task items.</div></div>
+      <div class="step"><div class="ico">{ }</div><div class="t">Parse</div>
+        <div class="d">Tolerant parser splits output into validated task items.</div></div>
       <div class="arrow"><span>→</span></div>
-      <div class="step"><div class="ico">✅</div><div class="t">ClickUp</div>
-        <div class="d">Creates one task per item — title, description, priority flag.</div></div>
+      <div class="step"><div class="ico">🤖</div><div class="t">Triage agent</div>
+        <div class="d">Second Claude pass applies the team SOP: priority + <b>confidence + reason</b>.</div></div>
+      <div class="arrow"><span>→</span></div>
+      <div class="step"><div class="ico">🚦</div><div class="t">Confidence gate</div>
+        <div class="d">IF confidence ≥ 0.8 → auto; else → human.</div></div>
     </div>
+  </div>
+  <div class="branches">
+    <div class="branch ok"><div class="head">✅ Confident → ClickUp, automatically</div>
+      <div class="d">Task created with title, description, and the right priority flag. No human time spent.</div></div>
+    <div class="branch ask"><div class="head">🤔 Unsure → Telegram approval</div>
+      <div class="d">A card with the agent's reasoning and Approve / Reject buttons. Approve creates the task; Reject blocks it. Either way, a confirmation follows.</div></div>
   </div>
   <p class="foot">Built in n8n · the exported workflow is in
   <a href="https://github.com/natalie-chmurova/ai-product-ops-workbench/blob/main/n8n/meeting-to-clickup.workflow.json">/n8n</a> (importable).</p>
 
-  <h2>The result</h2>
-  <p>One click turns a 35-minute sync into a populated board:</p>
-  <div class="card stripe">
-    <span class="pill" style="background:var(--p1)">Urgent</span>[Product&nbsp;Detail][Dev] Fix Android crash from null image carousel<br>
-    <span class="pill" style="background:var(--p2)">High</span>[Checkout][Dev] Resolve payment provider sandbox rejection<br>
-    <span class="pill" style="background:var(--p3)">Normal</span>[Checkout][Product] Plan saved cards as fast-follow
+  <h2>Human-in-the-loop, live</h2>
+  <p>Output from a real run — the agent flags a scope-approval item it cannot confidently prioritize:</p>
+  <div class="tg">
+    <div class="from">Workbench Approvals · Telegram bot</div>
+    <div class="bubble">
+      🤖 <b>Task needs your approval</b><br><br>
+      📌 [Checkout][Product] Approve shipping checkout redesign without saved cards<br><br>
+      Priority: 2 · <span class="conf">Confidence: 0.55</span><br>
+      <span class="why">Why unsure: release-blocking scope decision on the payment checkout flow,
+      but an approval-type task makes priority mapping ambiguous.</span>
+    </div>
+    <div class="btns"><div class="btn">❌ Reject</div><div class="btn">✅ Approve</div></div>
+    <div class="reply">❌ Rejected: [Checkout][Product] Approve shipping checkout redesign without
+    saved cards — <b>task was not created</b></div>
   </div>
-  <p style="color:var(--muted);font-size:13px">…6 tasks total, each with a description and the right priority flag — created directly in ClickUp.</p>
+  <p style="color:var(--muted);font-size:13px">All three paths verified end-to-end: confident tasks
+  created automatically · Approve creates the task · Reject blocks it, with a confirmation either way.</p>
 
   <div class="metrics">
     <div class="metric"><div class="n">hours&nbsp;→&nbsp;minutes</div><div class="l">meeting → prioritized backlog</div></div>
-    <div class="metric"><div class="n">0</div><div class="l">manual triage steps</div></div>
-    <div class="metric"><div class="n">4 nodes</div><div class="l">trigger · LLM · parser · ClickUp</div></div>
+    <div class="metric"><div class="n">confidence-gated</div><div class="l">agent asks instead of guessing</div></div>
+    <div class="metric"><div class="n">3 / 3</div><div class="l">auto · approve · reject — all verified live</div></div>
   </div>
 
   <h2>Guardrails &amp; judgment</h2>
-  <p>The first version asked the model for raw JSON — and it broke repeatedly on quotes and
-  line breaks inside long descriptions. I switched to a labelled text format the model produces
-  reliably, plus a parser that tolerates format drift and drops malformed fragments. That is the
-  real lesson of building agentic flows: <b>structured output, tolerant parsing, and exception
-  handling</b> matter more than the happy path.</p>
+  <p>The first version asked the model for raw JSON — and it broke repeatedly on quotes and line
+  breaks. I switched to a labelled text format the model produces reliably, plus a parser that
+  tolerates format drift and drops malformed fragments. The agent's SOP explicitly instructs it to
+  <b>lower its confidence rather than guess</b> when information is missing — which is exactly what
+  routes work to the human. Structured output, tolerant parsing, and escalation rules matter more
+  than the happy path.</p>
 
   <h2>Next iteration</h2>
-  <p>Add an <b>AI-agent step with human-in-the-loop</b>: low-confidence decisions (which sprint,
-  what priority, who owns it) route to a Telegram approval before anything is created — approve
-  or reject with a tap. Guardrails you can watch and tune.</p>
+  <p><b>Evals:</b> a labeled ground-truth transcript and an LLM-as-judge harness measuring
+  extraction precision/recall across runs — so prompt changes are tuned against numbers,
+  not vibes.</p>
 
   <div class="links">
     <a href="https://github.com/natalie-chmurova/ai-product-ops-workbench">← Code &amp; repo</a>
     <a href="https://natalie-chmurova.github.io/ai-product-ops-workbench/">Related: Workbench live demo →</a>
   </div>
 
-  <p class="foot">All demo data is synthetic — a fictional team and product.</p>
+  <p class="foot">All demo data is synthetic — a fictional team and product. The Telegram card above
+  reproduces actual output from a live run.</p>
 
 </div>
 </body>

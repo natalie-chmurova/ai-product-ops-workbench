@@ -1,0 +1,380 @@
+{
+  "name": "Meeting → ClickUp tasks (HITL)",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        0
+      ],
+      "id": "hitl_trigger",
+      "name": "Start"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "claude-sonnet-5",
+          "mode": "list",
+          "cachedResultName": "claude-sonnet-5"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are a product operations lead. Read the meeting transcript at the bottom and turn it into ClickUp-ready tasks.\n\nOutput the tasks as PLAIN TEXT ONLY — not JSON, not markdown. Use this exact block, repeated for each task:\n\n===TASK===\nname: [Area][Type] Short imperative title\npriority: 2\ntags: tag1, tag2\ndescription: One or two sentences describing the task and why it matters, all on the fields lines.\n\nRules:\n- priority is a single digit: 1=Urgent, 2=High, 3=Normal, 4=Low. A user-facing crash is 1.\n- [Type] is one of Dev, Design, QA, Product. [Area] is the product area.\n- Create one task per action item and one per bug. Ground everything in the transcript; do not invent.\n- Begin every task with a line containing exactly ===TASK===\n- Keep the four field labels exactly: name, priority, tags, description — in that order.\n- Do not write anything before the first ===TASK=== or after the last task.\n\nTRANSCRIPT:\nWeekly Product Sync — Northwind mobile marketplace app\nAttendees: Dana (Product), Marco (Engineering), Priya (Design), Sam (QA)\n\nDana: Main thing today is the checkout redesign, then the crash reports from last week. Marco, where is checkout?\nMarco: The new checkout flow is code-complete on the happy path — add to cart, pick shipping, pay with card. Saved cards are NOT done — the payment provider sandbox keeps rejecting our test tokens. I have a ticket open, no answer yet.\nDana: Can we ship checkout without saved cards?\nMarco: Yes, saved cards can be a fast-follow. If the provider replies this week we squeeze it in, otherwise next sprint.\nPriya: On checkout design the error states are bad. A failed payment just shows a generic error banner. I have designs to show the real reason like card declined, expired, or network. Someone needs to wire it up.\nMarco: I can take that, about half a day once copy is final.\nDana: Priya, also get the decline copy reviewed by legal, some of it has compliance wording.\nDana: QA — Sam, the crash reports.\nSam: Since the last release there is a spike in crashes on the product detail screen, about 4 percent of Android sessions, almost nothing on iOS. It happens when a product has no images and the image carousel hits a null.\nMarco: We never handle the empty-images case. I will put Alex on it tomorrow to show a placeholder when there are no photos, but we must test it, the carousel is shared across screens.\nSam: I will write regression tests for the empty-images path and re-run t"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.anthropic",
+      "typeVersion": 1,
+      "position": [
+        -380,
+        0
+      ],
+      "id": "hitl_extract",
+      "name": "Extract tasks (Claude)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get Claude's text block (skip the \"thinking\" block)\nconst content = $input.first().json.content || [];\nconst textBlock = content.find(c => c.type === 'text') || content[0] || {};\nconst raw = (textBlock.text || '').trim();\n\n// Each task starts with a \"name:\" line -- split on it\n// (works whether or not ===TASK=== markers are present)\nconst chunks = raw.split(/(?=^[ \\t]*name:)/im).filter(c => /name:/i.test(c));\n\nconst tasks = chunks.map(block => {\n  const name = ((block.match(/name:\\s*(.+)/i) || [])[1] || '').trim();\n  const priority = Number((block.match(/priority:\\s*(\\d)/i) || [])[1] || 3);\n  const tags = ((block.match(/tags:\\s*(.+)/i) || [])[1] || '')\n    .split(',').map(t => t.trim()).filter(Boolean);\n  let description = (block.match(/description:\\s*([\\s\\S]*)/i) || [])[1] || '';\n  description = description.replace(/={3,}\\s*TASK\\s*={3,}[\\s\\S]*$/i, '').replace(/={3,}\\s*$/, '').trim();\n  return { name, priority, tags, description };\n})\n// drop junk chunks: the name must be meaningful\n.filter(t => t.name.replace(/[\\[\\]\\s]/g, '').length > 3);\n\nreturn tasks.map(t => ({ json: t }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        0
+      ],
+      "id": "hitl_parse",
+      "name": "Parse tasks"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "claude-sonnet-5",
+          "mode": "list",
+          "cachedResultName": "claude-sonnet-5"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You are a sprint triage agent for the Northwind product team. Follow this SOP strictly:\n- Priorities: 1=Urgent (user-facing crash, data loss), 2=High (release-blocking, payments), 3=Normal (planned work), 4=Low (papercuts).\n- Base your decision ONLY on the task below. If information is missing, ambiguous, or the priority call is debatable, LOWER your confidence. Never guess silently.\n\nTask: {{ $json.name }}\nDescription: {{ $json.description }}\nTags: {{ $json.tags }}\n\nRespond in EXACTLY this format (three lines, nothing else):\nPRIORITY: <1|2|3|4>\nCONFIDENCE: <0.0-1.0>\nREASON: <one short sentence>",
+              "role": "user"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.anthropic",
+      "typeVersion": 1,
+      "position": [
+        60,
+        0
+      ],
+      "id": "hitl_triage",
+      "name": "Triage agent (Claude)"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Combine the agent's decision with the original task\nconst content = $json.content || [];\nconst tb = content.find(c => c.type === 'text') || content[0] || {};\nconst txt = tb.text || '';\nconst priority = Number((txt.match(/PRIORITY:\\s*(\\d)/i) || [])[1] || 3);\nconst confidence = Number((txt.match(/CONFIDENCE:\\s*([\\d.]+)/i) || [])[1] || 0);\nconst reason = ((txt.match(/REASON:\\s*(.+)/i) || [])[1] || '').trim();\nconst task = $('Parse tasks').item.json;\nreturn { json: { ...task, priority, confidence, reason } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        0
+      ],
+      "id": "hitl_merge",
+      "name": "Merge decision"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.confidence }}",
+              "rightValue": 0.8,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        500,
+        0
+      ],
+      "id": "hitl_ifconf",
+      "name": "Confident?"
+    },
+    {
+      "parameters": {
+        "team": "90182854498",
+        "space": "901811763971",
+        "folderless": true,
+        "list": "901819369543",
+        "name": "={{ $json.name }}",
+        "additionalFields": {
+          "content": "={{ $json.description }}\n",
+          "priority": "={{ $json.priority }}"
+        }
+      },
+      "type": "n8n-nodes-base.clickUp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        -120
+      ],
+      "id": "hitl_cu_auto",
+      "name": "Create task (auto)"
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "chatId": "YOUR_CHAT_ID",
+        "message": "=🤖 Task needs your approval\n\n📌 {{ $json.name }}\n\nPriority: {{ $json.priority }}  ·  Confidence: {{ $json.confidence }}\nWhy unsure: {{ $json.reason }}\n\n{{ $json.description }}",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "approveLabel": "✅ Approve",
+            "disapproveLabel": "❌ Reject"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        760,
+        140
+      ],
+      "id": "hitl_tg",
+      "name": "Ask approval (Telegram)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a1",
+              "leftValue": "={{ $json.data.approved }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1000,
+        140
+      ],
+      "id": "hitl_ifappr",
+      "name": "Approved?"
+    },
+    {
+      "parameters": {
+        "team": "90182854498",
+        "space": "901811763971",
+        "folderless": true,
+        "list": "901819369543",
+        "name": "={{ $('Merge decision').item.json.name }}",
+        "additionalFields": {
+          "content": "={{ $('Merge decision').item.json.description }}",
+          "priority": "={{ $('Merge decision').item.json.priority }}"
+        }
+      },
+      "type": "n8n-nodes-base.clickUp",
+      "typeVersion": 1,
+      "position": [
+        1260,
+        60
+      ],
+      "id": "hitl_cu_appr",
+      "name": "Create task (approved)"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_CHAT_ID",
+        "text": "=✅ Approved & created: {{ $('Merge decision').item.json.name }}\n🔗 {{ $json.url }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1500,
+        60
+      ],
+      "id": "hitl_tg_ok",
+      "name": "Confirm created (Telegram)"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_CHAT_ID",
+        "text": "=❌ Rejected: {{ $('Merge decision').item.json.name }}\n(task was not created)",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1260,
+        260
+      ],
+      "id": "hitl_tg_no",
+      "name": "Notify rejected (Telegram)"
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Extract tasks (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract tasks (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Parse tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse tasks": {
+      "main": [
+        [
+          {
+            "node": "Triage agent (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Triage agent (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Merge decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge decision": {
+      "main": [
+        [
+          {
+            "node": "Confident?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confident?": {
+      "main": [
+        [
+          {
+            "node": "Create task (auto)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ask approval (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask approval (Telegram)": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Create task (approved)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify rejected (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create task (approved)": {
+      "main": [
+        [
+          {
+            "node": "Confirm created (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
