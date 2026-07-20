@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Meeting → ClickUp tasks — an agentic n8n workflow with human-in-the-loop</title>
+<title>Meeting → ClickUp board sync — an agentic n8n workflow with human-in-the-loop</title>
 <style>
   :root{
     --bg:#0f1216; --panel:#171b21; --line:#262c34; --panel2:#1c222a;
@@ -13,11 +13,11 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--text);
     font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
-  .wrap{max-width:920px;margin:0 auto;padding:44px 24px 64px;}
+  .wrap{max-width:940px;margin:0 auto;padding:44px 24px 64px;}
   .eyebrow{color:var(--accent);font-size:12px;font-weight:700;letter-spacing:.14em;
     text-transform:uppercase;margin:0 0 10px;}
   h1{font-size:30px;line-height:1.2;letter-spacing:-.02em;margin:0 0 12px;text-wrap:balance;}
-  .lede{color:var(--soft);font-size:17px;max-width:62ch;margin:0 0 8px;}
+  .lede{color:var(--soft);font-size:17px;max-width:64ch;margin:0 0 8px;}
   .stack{color:var(--muted);font-size:13px;margin:14px 0 0;}
   .stack b{color:var(--soft);font-weight:600;}
   h2{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
@@ -30,31 +30,31 @@
   .metric .l{color:var(--muted);font-size:12.5px;margin-top:4px;}
   /* flow diagram */
   .flow-scroll{overflow-x:auto;padding-bottom:6px;}
-  .flow{display:flex;align-items:stretch;gap:0;min-width:760px;}
+  .flow{display:flex;align-items:stretch;gap:0;min-width:820px;}
   .step{background:var(--panel);border:1px solid var(--line);border-radius:14px;
-    padding:14px 14px 12px;width:150px;flex:none;}
+    padding:14px 13px 12px;width:148px;flex:none;}
   .step .ico{font-size:19px;}
   .step .t{font-weight:650;font-size:13.5px;margin:7px 0 4px;}
   .step .d{color:var(--muted);font-size:11.5px;line-height:1.45;}
   .arrow{display:flex;align-items:center;color:var(--line);flex:none;padding:0 5px;}
   .arrow span{color:var(--accent);font-size:18px;}
-  /* branches under the gate */
-  .branches{display:flex;gap:14px;flex-wrap:wrap;margin-top:14px;}
-  .branch{flex:1;min-width:260px;background:var(--panel);border:1px solid var(--line);
+  /* outcomes */
+  .outs{display:flex;gap:12px;flex-wrap:wrap;margin-top:14px;}
+  .out{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);
     border-radius:14px;padding:14px 16px;}
-  .branch .head{font-weight:650;font-size:13.5px;margin-bottom:4px;}
-  .branch .d{color:var(--muted);font-size:12.5px;}
-  .branch.ok .head{color:var(--ok);}
-  .branch.ask .head{color:var(--p2);}
-  /* cards */
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
-    padding:18px 20px;margin:0 0 12px;}
-  .card.stripe{position:relative;padding-left:22px;overflow:hidden;}
-  .card.stripe::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--accent);}
-  .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 10px;border-radius:999px;
-    color:#0f1216;margin-right:6px;}
-  ul{margin:6px 0 0;padding-left:20px;color:var(--soft);}
-  li{margin:4px 0;}
+  .out .head{font-weight:650;font-size:13.5px;margin-bottom:4px;}
+  .out .d{color:var(--muted);font-size:12.5px;}
+  .out.new .head{color:var(--accent);}
+  .out.upd .head{color:var(--ok);}
+  .out.ask .head{color:var(--p2);}
+  /* result list */
+  .board{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:14px 18px;margin:0 0 8px;font-size:13.5px;}
+  .board .row{padding:7px 0;border-bottom:1px solid var(--line);color:var(--soft);}
+  .board .row:last-child{border-bottom:none;}
+  .board .cmt{color:var(--muted);font-size:12.5px;padding-left:22px;}
+  .tag-new{color:var(--accent);font-size:11px;font-weight:700;margin-left:6px;}
+  .tag-upd{color:var(--ok);font-size:11px;font-weight:700;margin-left:6px;}
   a{color:var(--accent);}
   .links{margin-top:32px;padding-top:22px;border-top:1px solid var(--line);
     display:flex;gap:18px;flex-wrap:wrap;font-size:14px;}
@@ -80,83 +80,98 @@
 <div class="wrap">
 
   <p class="eyebrow">n8n · agentic automation · human-in-the-loop</p>
-  <h1>Meeting&nbsp;→&nbsp;ClickUp tasks, with an agent that knows when to ask</h1>
-  <p class="lede">An n8n workflow that turns a raw product-meeting transcript into prioritized
-  ClickUp tasks — and routes every decision it is <i>not confident about</i> to a human
-  for one-tap approval in Telegram.</p>
+  <h1>Keep a ClickUp board in sync with your product meetings</h1>
+  <p class="lede">An n8n workflow that reads a meeting transcript, compares it against the live
+  ClickUp board, and does the right thing per point: <b>create</b> genuinely new tasks,
+  <b>comment</b> new context onto tasks that already exist, and <b>escalate</b> the calls it is
+  not confident about to a human in Telegram — without ever creating a duplicate.</p>
   <p class="stack">Stack: <b>n8n</b> · <b>Claude (Anthropic)</b> · <b>ClickUp API</b> · <b>Telegram</b></p>
 
   <h2>The problem</h2>
-  <p>Every product sync produces decisions, owners, and bugs — buried in a messy transcript.
-  Turning that into a structured backlog is high-effort, low-leverage work. Full automation has
-  the opposite failure mode: an LLM will happily make triage calls it should not be making alone.
-  The interesting problem is the middle: <b>automate the confident calls, escalate the doubtful ones.</b></p>
+  <p>Meetings don't just create work — they <i>update</i> it. A follow-up sync is mostly status
+  changes on tasks that already exist. Two naive approaches both fail: doing it by hand is slow and
+  gets skipped; blindly auto-creating tasks floods the board with duplicates and lets an LLM make
+  triage calls it shouldn't make alone. The real job is <b>reconciliation</b> — match each point
+  to the board, decide new vs. update, and keep a human on the doubtful ones.</p>
 
   <h2>The workflow</h2>
   <div class="flow-scroll">
     <div class="flow">
       <div class="step"><div class="ico">⚡</div><div class="t">Trigger</div>
-        <div class="d">Manual for demo; folder/webhook watch in production.</div></div>
+        <div class="d">Manual for demo; folder/webhook in production.</div></div>
       <div class="arrow"><span>→</span></div>
-      <div class="step"><div class="ico">🧠</div><div class="t">Extract</div>
-        <div class="d">Claude reads the transcript, extracts tasks with tags.</div></div>
+      <div class="step"><div class="ico">📖</div><div class="t">Read board</div>
+        <div class="d">Fetch the current ClickUp tasks (id + name).</div></div>
       <div class="arrow"><span>→</span></div>
-      <div class="step"><div class="ico">{ }</div><div class="t">Parse</div>
-        <div class="d">Tolerant parser splits output into validated task items.</div></div>
+      <div class="step"><div class="ico">🧠</div><div class="t">Extract points</div>
+        <div class="d">Claude pulls every discussed point — updates and new work.</div></div>
       <div class="arrow"><span>→</span></div>
-      <div class="step"><div class="ico">🤖</div><div class="t">Triage agent</div>
-        <div class="d">Second Claude pass applies the team SOP: priority + <b>confidence + reason</b>.</div></div>
+      <div class="step"><div class="ico">🤖</div><div class="t">Match agent</div>
+        <div class="d">New vs. update against the board + <b>confidence + reason</b>.</div></div>
       <div class="arrow"><span>→</span></div>
       <div class="step"><div class="ico">🚦</div><div class="t">Confidence gate</div>
-        <div class="d">IF confidence ≥ 0.8 → auto; else → human.</div></div>
+        <div class="d">≥ 0.8 acts automatically; below → human.</div></div>
     </div>
   </div>
-  <div class="branches">
-    <div class="branch ok"><div class="head">✅ Confident → ClickUp, automatically</div>
-      <div class="d">Task created with title, description, and the right priority flag. No human time spent.</div></div>
-    <div class="branch ask"><div class="head">🤔 Unsure → Telegram approval</div>
-      <div class="d">A card with the agent's reasoning and Approve / Reject buttons. Approve creates the task; Reject blocks it. Either way, a confirmation follows.</div></div>
+  <div class="outs">
+    <div class="out new"><div class="head">✳️ New → create task</div>
+      <div class="d">No existing task covers it → a fresh, prioritized ClickUp task.</div></div>
+    <div class="out upd"><div class="head">💬 Update → comment</div>
+      <div class="d">Matches an existing task → the new context is added as a comment. No duplicate.</div></div>
+    <div class="out ask"><div class="head">🤔 Unsure → Telegram</div>
+      <div class="d">Ambiguous match or priority → Approve / Reject card, then it acts (or doesn't).</div></div>
   </div>
-  <p class="foot">Built in n8n · the exported workflow is in
-  <a href="https://github.com/natalie-chmurova/ai-product-ops-workbench/blob/main/n8n/meeting-to-clickup.workflow.json">/n8n</a> (importable).</p>
+  <p class="foot">Built in n8n · exported workflows in
+  <a href="https://github.com/natalie-chmurova/ai-product-ops-workbench/tree/main/n8n">/n8n</a> (importable).</p>
+
+  <h2>A real run</h2>
+  <p>A follow-up sync over a board of 7 existing tasks. The agent matched each point and reconciled
+  the board — 0 duplicates:</p>
+  <div class="board">
+    <div class="row">📌 Resolve payment provider sandbox rejection<span class="tag-upd">UPDATED</span>
+      <div class="cmt">💬 Payment provider fixed sandbox tokenization; test tokens now pass — saved cards unblocked.</div></div>
+    <div class="row">📌 Fix Android crash from null image carousel<span class="tag-upd">UPDATED</span>
+      <div class="cmt">💬 Alex's fix is in code review; regression tests written.</div></div>
+    <div class="row">📌 Get decline copy reviewed by legal<span class="tag-upd">UPDATED</span>
+      <div class="cmt">💬 Decline copy approved by legal, no compliance changes needed.</div></div>
+    <div class="row">📌 iOS checkout abandonment spike investigation<span class="tag-new">NEW</span>
+      <div class="cmt">✳️ Created — 12% drop at the payment step over three days; no existing task covered it.</div></div>
+  </div>
+  <p style="color:var(--muted);font-size:13px">4 updates landed as comments on the right existing
+  tasks · 2 genuinely new tasks created · 0 duplicates — verified against the live board.</p>
 
   <h2>Human-in-the-loop, live</h2>
-  <p>Output from a real run — the agent flags a scope-approval item it cannot confidently prioritize:</p>
+  <p>Low-confidence calls go to Telegram before anything is written — reproducing actual run output:</p>
   <div class="tg">
     <div class="from">Workbench Approvals · Telegram bot</div>
     <div class="bubble">
-      🤖 <b>Task needs your approval</b><br><br>
-      📌 [Checkout][Product] Approve shipping checkout redesign without saved cards<br><br>
-      Priority: 2 · <span class="conf">Confidence: 0.55</span><br>
-      <span class="why">Why unsure: release-blocking scope decision on the payment checkout flow,
-      but an approval-type task makes priority mapping ambiguous.</span>
+      🤖 <b>Needs your approval</b><br><br>
+      Proposed: comment on existing task — [Checkout] Approve shipping checkout redesign without saved cards<br><br>
+      <span class="conf">Confidence: 0.55</span><br>
+      <span class="why">Why unsure: could map to the saved-cards task or the checkout-release task; ambiguous.</span>
     </div>
     <div class="btns"><div class="btn">❌ Reject</div><div class="btn">✅ Approve</div></div>
-    <div class="reply">❌ Rejected: [Checkout][Product] Approve shipping checkout redesign without
-    saved cards — <b>task was not created</b></div>
+    <div class="reply">✅ Done: comment added to the matched task.</div>
   </div>
-  <p style="color:var(--muted);font-size:13px">All three paths verified end-to-end: confident tasks
-  created automatically · Approve creates the task · Reject blocks it, with a confirmation either way.</p>
 
   <div class="metrics">
-    <div class="metric"><div class="n">hours&nbsp;→&nbsp;minutes</div><div class="l">meeting → prioritized backlog</div></div>
-    <div class="metric"><div class="n">confidence-gated</div><div class="l">agent asks instead of guessing</div></div>
-    <div class="metric"><div class="n">3 / 3</div><div class="l">auto · approve · reject — all verified live</div></div>
+    <div class="metric"><div class="n">0 duplicates</div><div class="l">reconciled against the live board</div></div>
+    <div class="metric"><div class="n">create · comment · ask</div><div class="l">three outcomes, one gate</div></div>
+    <div class="metric"><div class="n">hours&nbsp;→&nbsp;minutes</div><div class="l">meeting → synced backlog</div></div>
   </div>
 
   <h2>Guardrails &amp; judgment</h2>
-  <p>The first version asked the model for raw JSON — and it broke repeatedly on quotes and line
-  breaks. I switched to a labelled text format the model produces reliably, plus a parser that
-  tolerates format drift and drops malformed fragments. The agent's SOP explicitly instructs it to
-  <b>lower its confidence rather than guess</b> when information is missing — which is exactly what
-  routes work to the human. Structured output, tolerant parsing, and escalation rules matter more
-  than the happy path.</p>
+  <p>Three deliberate choices carry this. <b>Structured, tolerant parsing:</b> asking the model for
+  raw JSON broke repeatedly on quotes and line breaks, so I moved to a labelled text format plus a
+  parser that drops malformed fragments. <b>A grounded match:</b> the agent only ever comments on a
+  task id that actually exists on the board — an update pointing anywhere else is forced to a human.
+  <b>Confidence over bravado:</b> the SOP tells the agent to lower its confidence rather than guess,
+  which is exactly what routes the ambiguous calls to Telegram.</p>
 
   <h2>Evals</h2>
-  <p>Extraction is measured, not vibes-checked: a labeled ground-truth transcript
-  (8 must-have + 3 debatable tasks) and an <b>LLM-as-judge harness</b> scoring
-  precision/recall per run. Current pipeline: <b>100% recall · 100% precision</b> over
-  3 runs on the benchmark transcript
+  <p>Extraction is measured, not vibes-checked: a labeled ground-truth transcript (8 must-have +
+  3 debatable tasks) and an <b>LLM-as-judge harness</b> scoring precision/recall per run.
+  Current pipeline: <b>100% recall · 100% precision</b> over 3 runs
   (<a href="https://github.com/natalie-chmurova/ai-product-ops-workbench/tree/main/evals">evals/</a>).
   Next: harder, messier transcripts to stress the numbers.</p>
 
@@ -165,8 +180,8 @@
     <a href="https://natalie-chmurova.github.io/ai-product-ops-workbench/">Related: Workbench live demo →</a>
   </div>
 
-  <p class="foot">All demo data is synthetic — a fictional team and product. The Telegram card above
-  reproduces actual output from a live run.</p>
+  <p class="foot">All demo data is synthetic — a fictional team and product. The board result and
+  Telegram card reproduce actual output from live runs.</p>
 
 </div>
 </body>

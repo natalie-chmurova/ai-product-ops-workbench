@@ -1,0 +1,591 @@
+{
+  "name": "Meeting → ClickUp (sync: create-or-update)",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -900,
+        0
+      ],
+      "id": "hitl_trigger",
+      "name": "Start"
+    },
+    {
+      "parameters": {
+        "resource": "task",
+        "operation": "getAll",
+        "returnAll": true,
+        "team": "90182854498",
+        "space": "901811763971",
+        "folderless": true,
+        "list": "901819369543",
+        "filters": {}
+      },
+      "type": "n8n-nodes-base.clickUp",
+      "typeVersion": 1,
+      "position": [
+        -860,
+        0
+      ],
+      "id": "s3_fetch",
+      "name": "Fetch board"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Compact board listing for the match agent\nconst lines = $input.all().map(i => `${i.json.id} | ${i.json.name}`);\nreturn [{ json: { boardText: lines.join('\\n'), count: lines.length } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        0
+      ],
+      "id": "s3_board",
+      "name": "Board summary"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "claude-sonnet-5",
+          "mode": "list",
+          "cachedResultName": "claude-sonnet-5"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "user",
+              "content": "=You are a meeting-sync assistant. Read the follow-up meeting transcript and extract EVERY distinct point discussed: status updates on existing work, decisions, AND brand-new action items. Do NOT skip a point just because it is an update rather than a new task.\n\nOutput PLAIN TEXT only, one block per point, in this exact format:\n===ITEM===\nname: [Area] short title of the topic\npriority: <1|2|3|4>\ntags: tag1, tag2\ndescription: what was said about it in THIS meeting (the update or the new work), on one line, no double quotes, no line breaks\n\nRules:\n- Begin every point with a line containing exactly ===ITEM===\n- Keep the four field labels exactly: name, priority, tags, description.\n- Ground everything in the transcript. Output only the items.\n\nTRANSCRIPT:\nWeekly Product Sync (follow-up) — Northwind mobile marketplace app\nAttendees: Dana (Product), Marco (Engineering), Priya (Design), Sam (QA)\n\nDana: Quick round on last week's items, then one new thing.\nMarco: Good news on saved cards — the payment provider finally replied, the sandbox tokenization is fixed on their side. Our test tokens go through now, so saved cards is unblocked and we can build it as the fast-follow.\nPriya: The payment error-state designs got signed off by legal — the decline copy is approved, no compliance changes needed. Handing the final Figma to Marco today.\nMarco: Got it, I'll start wiring the error states tomorrow after the crash fix ships.\nSam: On the Android crash — Alex's fix for the empty-images carousel is in code review, looks clean. I've written the regression tests; planning to run the full carousel suite once it merges, probably tomorrow.\nDana: Finance approved two more Android test devices, by the way — that unblocks the wider-coverage testing we flagged.\nDana: Now the new thing. We're seeing a spike in checkout abandonment specifically on iOS in the last three days — about 12% drop at the payment step. We don't know why yet. Marco, can someone dig into the iOS checkout funnel and figure out where users are dropping?\nMarco: Yeah, I'll pull the session data and take a look. Feels urgent given the numbers.\nDana: Agreed, treat it as high priority. That's it for today.\n"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.anthropic",
+      "typeVersion": 1,
+      "position": [
+        -420,
+        0
+      ],
+      "id": "hitl_extract",
+      "name": "Extract tasks (Claude)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get Claude's text block (skip the \"thinking\" block)\nconst content = $input.first().json.content || [];\nconst textBlock = content.find(c => c.type === 'text') || content[0] || {};\nconst raw = (textBlock.text || '').trim();\n\n// Each task starts with a \"name:\" line -- split on it\n// (works whether or not ===TASK=== markers are present)\nconst chunks = raw.split(/(?=^[ \\t]*name:)/im).filter(c => /name:/i.test(c));\n\nconst tasks = chunks.map(block => {\n  const name = ((block.match(/name:\\s*(.+)/i) || [])[1] || '').trim();\n  const priority = Number((block.match(/priority:\\s*(\\d)/i) || [])[1] || 3);\n  const tags = ((block.match(/tags:\\s*(.+)/i) || [])[1] || '')\n    .split(',').map(t => t.trim()).filter(Boolean);\n  let description = (block.match(/description:\\s*([\\s\\S]*)/i) || [])[1] || '';\n  description = description.replace(/={3,}\\s*TASK\\s*={3,}[\\s\\S]*$/i, '').replace(/={3,}\\s*$/, '').trim();\n  return { name, priority, tags, description };\n})\n// drop junk chunks: the name must be meaningful\n.filter(t => t.name.replace(/[\\[\\]\\s]/g, '').length > 3);\n\nreturn tasks.map(t => ({ json: t }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -200,
+        0
+      ],
+      "id": "hitl_parse",
+      "name": "Parse tasks"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "claude-sonnet-5",
+          "mode": "list",
+          "cachedResultName": "claude-sonnet-5"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "user",
+              "content": "=You are a board-sync agent. Decide whether a meeting point is NEW work or an UPDATE to a task that already exists on the board.\n\nEXISTING TASKS (id | name):\n{{ $('Board summary').first().json.boardText }}\n\nMEETING POINT:\nName: {{ $json.name }}\nDetail: {{ $json.description }}\n\nRules:\n- Prefer UPDATE when the point clearly concerns the same work as an existing task, even with different wording.\n- Use NEW only when no existing task reasonably covers it.\n- If you are torn between two tasks or unsure, LOWER your confidence. Never guess silently.\n\nRespond in EXACTLY this format (four lines, nothing else):\nDECISION: <NEW|UPDATE>\nTASK_ID: <existing task id or NONE>\nCONFIDENCE: <0.0-1.0>\nREASON: <one short sentence>"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.anthropic",
+      "typeVersion": 1,
+      "position": [
+        20,
+        0
+      ],
+      "id": "s3_match",
+      "name": "Match agent (Claude)"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Parse the match agent's decision and merge with the meeting point\nconst content = $json.content || [];\nconst tb = content.find(c => c.type === 'text') || content[0] || {};\nconst t = tb.text || '';\nconst decision = ((t.match(/DECISION:\\s*(NEW|UPDATE)/i) || [])[1] || 'NEW').toUpperCase();\nconst taskId = ((t.match(/TASK_ID:\\s*([a-z0-9]+)/i) || [])[1] || '');\nlet confidence = Number((t.match(/CONFIDENCE:\\s*([\\d.]+)/i) || [])[1] || 0);\nconst reason = ((t.match(/REASON:\\s*(.+)/i) || [])[1] || '').trim();\nconst item = $('Parse tasks').item.json;\nconst board = $('Board summary').first().json.boardText || '';\nconst is_update = decision === 'UPDATE';\nif (is_update && (!taskId || !board.includes(taskId))) confidence = 0;\nconst comment = (item.description || item.name || '').trim();\nconst action_summary = is_update\n  ? ('comment on existing task ' + taskId + ': ' + item.name)\n  : ('create a new task: ' + item.name);\nreturn { json: Object.assign({}, item, { is_update, target_id: taskId, confidence, reason, comment, action_summary }) };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "id": "s3_decide",
+      "name": "Parse decision"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "s3_ifconfc",
+              "leftValue": "={{ $json.confidence }}",
+              "rightValue": 0.8,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        460,
+        0
+      ],
+      "id": "s3_ifconf",
+      "name": "Confident?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "s3_ifupdac",
+              "leftValue": "={{ $json.is_update }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        700,
+        -120
+      ],
+      "id": "s3_ifupda",
+      "name": "Update? (auto)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.clickup.com/api/v2/task/{{ $json.target_id }}/comment",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "clickUpApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"comment_text\": {{ JSON.stringify(\"📝 Update from meeting sync:\\n\" + ($json.comment)) }}, \"notify_all\": false }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        940,
+        -180
+      ],
+      "id": "s3_cma",
+      "name": "Add comment (auto)"
+    },
+    {
+      "parameters": {
+        "team": "90182854498",
+        "space": "901811763971",
+        "folderless": true,
+        "list": "901819369543",
+        "name": "={{ $json.name }}",
+        "additionalFields": {
+          "content": "={{ $json.description }}\n",
+          "priority": "={{ $json.priority }}"
+        }
+      },
+      "type": "n8n-nodes-base.clickUp",
+      "typeVersion": 1,
+      "position": [
+        940,
+        -60
+      ],
+      "id": "s3_cra",
+      "name": "Create task (auto)"
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "chatId": "YOUR_CHAT_ID",
+        "message": "=🤖 Needs your approval\n\nProposed: {{ $json.action_summary }}\n\n📌 {{ $json.name }}\nConfidence: {{ $json.confidence }} · {{ $json.reason }}\n\n{{ $json.is_update ? 'Proposed comment: ' + $json.comment : $json.description }}",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "approveLabel": "✅ Approve",
+            "disapproveLabel": "❌ Reject"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        700,
+        140
+      ],
+      "id": "s3_tg",
+      "name": "Ask approval (Telegram)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "s3_ifapprc",
+              "leftValue": "={{ $json.data.approved }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        960,
+        140
+      ],
+      "id": "s3_ifappr",
+      "name": "Approved?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "s3_ifupdpc",
+              "leftValue": "={{ $('Parse decision').item.json.is_update }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1200,
+        140
+      ],
+      "id": "s3_ifupdp",
+      "name": "Update? (appr)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.clickup.com/api/v2/task/{{ $('Parse decision').item.json.target_id }}/comment",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "clickUpApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"comment_text\": {{ JSON.stringify(\"📝 Update from meeting sync:\\n\" + ($('Parse decision').item.json.comment)) }}, \"notify_all\": false }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        60
+      ],
+      "id": "s3_cmp",
+      "name": "Add comment (appr)"
+    },
+    {
+      "parameters": {
+        "team": "90182854498",
+        "space": "901811763971",
+        "folderless": true,
+        "list": "901819369543",
+        "name": "={{ $('Parse decision').item.json.name }}",
+        "additionalFields": {
+          "content": "={{ $('Parse decision').item.json.description }}",
+          "priority": "={{ $('Parse decision').item.json.priority }}"
+        }
+      },
+      "type": "n8n-nodes-base.clickUp",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        200
+      ],
+      "id": "s3_crp",
+      "name": "Create task (appr)"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_CHAT_ID",
+        "text": "=✅ Done: {{ $('Parse decision').item.json.action_summary }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1680,
+        130
+      ],
+      "id": "s3_tgok",
+      "name": "Confirm done (Telegram)"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_CHAT_ID",
+        "text": "=❌ Rejected: {{ $('Parse decision').item.json.action_summary }} (nothing changed)",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1200,
+        300
+      ],
+      "id": "s3_tgno",
+      "name": "Notify rejected (Telegram)"
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Fetch board",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch board": {
+      "main": [
+        [
+          {
+            "node": "Board summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Board summary": {
+      "main": [
+        [
+          {
+            "node": "Extract tasks (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract tasks (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Parse tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse tasks": {
+      "main": [
+        [
+          {
+            "node": "Match agent (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match agent (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Parse decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse decision": {
+      "main": [
+        [
+          {
+            "node": "Confident?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confident?": {
+      "main": [
+        [
+          {
+            "node": "Update? (auto)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ask approval (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update? (auto)": {
+      "main": [
+        [
+          {
+            "node": "Add comment (auto)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create task (auto)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask approval (Telegram)": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Update? (appr)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify rejected (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update? (appr)": {
+      "main": [
+        [
+          {
+            "node": "Add comment (appr)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create task (appr)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add comment (appr)": {
+      "main": [
+        [
+          {
+            "node": "Confirm done (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create task (appr)": {
+      "main": [
+        [
+          {
+            "node": "Confirm done (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

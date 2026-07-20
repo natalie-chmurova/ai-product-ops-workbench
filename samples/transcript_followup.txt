@@ -1,0 +1,12 @@
+Weekly Product Sync (follow-up) — Northwind mobile marketplace app
+Attendees: Dana (Product), Marco (Engineering), Priya (Design), Sam (QA)
+
+Dana: Quick round on last week's items, then one new thing.
+Marco: Good news on saved cards — the payment provider finally replied, the sandbox tokenization is fixed on their side. Our test tokens go through now, so saved cards is unblocked and we can build it as the fast-follow.
+Priya: The payment error-state designs got signed off by legal — the decline copy is approved, no compliance changes needed. Handing the final Figma to Marco today.
+Marco: Got it, I'll start wiring the error states tomorrow after the crash fix ships.
+Sam: On the Android crash — Alex's fix for the empty-images carousel is in code review, looks clean. I've written the regression tests; planning to run the full carousel suite once it merges, probably tomorrow.
+Dana: Finance approved two more Android test devices, by the way — that unblocks the wider-coverage testing we flagged.
+Dana: Now the new thing. We're seeing a spike in checkout abandonment specifically on iOS in the last three days — about 12% drop at the payment step. We don't know why yet. Marco, can someone dig into the iOS checkout funnel and figure out where users are dropping?
+Marco: Yeah, I'll pull the session data and take a look. Feels urgent given the numbers.
+Dana: Agreed, treat it as high priority. That's it for today.
