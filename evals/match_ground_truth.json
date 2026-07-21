@@ -1,0 +1,80 @@
+{
+  "note": "Ground truth for the board-sync agent's NEW-vs-UPDATE decision. A fixed synthetic board plus meeting points, each labeled with the decision a competent PM would make. Scored by exact match — no LLM judge needed for a categorical decision.",
+  "board": [
+    { "id": "T1", "name": "[Checkout][Dev] Resolve payment provider sandbox rejection for saved cards" },
+    { "id": "T2", "name": "[Checkout][Design] Finalize payment error-state designs" },
+    { "id": "T3", "name": "[Checkout][Dev] Wire up payment error states" },
+    { "id": "T4", "name": "[Checkout][Product] Get decline copy reviewed by legal" },
+    { "id": "T5", "name": "[Product Detail][Dev] Fix Android crash from empty-images carousel" },
+    { "id": "T6", "name": "[Product Detail][QA] Regression tests for empty-images path" },
+    { "id": "T7", "name": "[Checkout][Dev] Instrument checkout funnel analytics" }
+  ],
+  "points": [
+    {
+      "name": "[Checkout] Saved cards unblocked",
+      "detail": "Payment provider fixed the sandbox tokenization; test tokens now pass, so saved cards is unblocked and can be built as the fast-follow.",
+      "expected_decision": "UPDATE",
+      "expected_target": "T1"
+    },
+    {
+      "name": "[Checkout] Start wiring payment error states",
+      "detail": "Marco will start wiring up the payment error states tomorrow, after the crash fix ships.",
+      "expected_decision": "UPDATE",
+      "expected_target": "T3"
+    },
+    {
+      "name": "[Checkout] Decline copy approved by legal",
+      "detail": "Legal signed off on the payment decline copy, no compliance changes needed.",
+      "expected_decision": "UPDATE",
+      "expected_target": "T4"
+    },
+    {
+      "name": "[Product Detail] Crash fix in review",
+      "detail": "Alex's fix for the empty-images carousel crash is in code review and looks clean.",
+      "expected_decision": "UPDATE",
+      "expected_target": "T5"
+    },
+    {
+      "name": "[QA] More Android test devices approved",
+      "detail": "Finance approved two more physical Android test devices for wider-coverage testing.",
+      "expected_decision": "NEW",
+      "expected_target": null,
+      "why": "No device-provisioning task exists on the board."
+    },
+    {
+      "name": "[iOS] Checkout abandonment spike",
+      "detail": "12% drop at the payment step over the last three days on iOS; someone needs to dig into the iOS checkout funnel.",
+      "expected_decision": "NEW",
+      "expected_target": null,
+      "why": "A brand-new investigation, no existing task covers it."
+    },
+    {
+      "name": "[Checkout] Vendor token issue resolved",
+      "detail": "The token thing with the payments vendor finally got sorted out on their side.",
+      "expected_decision": "UPDATE",
+      "expected_target": "T1",
+      "why": "TRAP (hard match): same work as T1 but phrased completely differently."
+    },
+    {
+      "name": "[Product Detail] Placeholder image shipped",
+      "detail": "The placeholder image for products with no photos went out.",
+      "expected_decision": "UPDATE",
+      "expected_target": "T5",
+      "why": "TRAP (hard match): describes the outcome of the T5 crash fix in different words."
+    },
+    {
+      "name": "[Analytics] Seller retention dashboard",
+      "detail": "We should build a dashboard to track seller retention month over month.",
+      "expected_decision": "NEW",
+      "expected_target": null,
+      "why": "TRAP (false match): sounds like analytics (T7) but T7 is checkout-funnel analytics — different work."
+    },
+    {
+      "name": "[Checkout] Refund flow for failed payments",
+      "detail": "Legal asked us to add a refund flow when a payment fails.",
+      "expected_decision": "NEW",
+      "expected_target": null,
+      "why": "TRAP (false match): touches legal + payments + checkout, but it is genuinely new scope, not T3/T4."
+    }
+  ]
+}

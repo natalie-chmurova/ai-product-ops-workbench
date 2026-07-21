@@ -168,12 +168,16 @@
   <b>Confidence over bravado:</b> the SOP tells the agent to lower its confidence rather than guess,
   which is exactly what routes the ambiguous calls to Telegram.</p>
 
-  <h2>Evals</h2>
-  <p>Extraction is measured, not vibes-checked: a labeled ground-truth transcript (8 must-have +
-  3 debatable tasks) and an <b>LLM-as-judge harness</b> scoring precision/recall per run.
-  Current pipeline: <b>100% recall · 100% precision</b> over 3 runs
-  (<a href="https://github.com/natalie-chmurova/ai-product-ops-workbench/tree/main/evals">evals/</a>).
-  Next: harder, messier transcripts to stress the numbers.</p>
+  <h2>Evals — measured, not vibes-checked</h2>
+  <p>Two harnesses (<a href="https://github.com/natalie-chmurova/ai-product-ops-workbench/tree/main/evals">evals/</a>):</p>
+  <p><b>Extraction quality</b> — a labeled ground-truth transcript (8 must-have + 3 debatable tasks)
+  scored by an <b>LLM-as-judge</b> for precision/recall: <b>100% / 100%</b> over 3 runs.</p>
+  <p><b>Agent decisions</b> — the harder, more interesting one. A labeled board plus meeting points
+  with deliberate traps (same work phrased differently; new work that sounds like an existing task),
+  scoring the agent's <b>new-vs-update</b> call by exact match: <b>90% decision · 83% target
+  accuracy</b>. The eval reliably surfaces a real, reproducible failure — the agent doesn't connect
+  a point describing a task's <i>outcome</i> ("placeholder image shipped") to the task itself ("fix
+  the empty-images crash"). That is exactly what an eval is for: a concrete thing to fix, not a vibe.</p>
 
   <div class="links">
     <a href="https://github.com/natalie-chmurova/ai-product-ops-workbench">← Code &amp; repo</a>
