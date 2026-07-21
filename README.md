@@ -53,10 +53,13 @@ environment on first run and launches the app.
 **Command line (batch / scripting):**
 
 ```bash
-python workbench.py samples/transcript_demo.txt
+python workbench.py samples/transcript_demo.txt   # a transcript...
+python workbench.py samples/meeting_demo.m4a       # ...or an audio recording
 open outputs/report.html      # macOS ("xdg-open" on Linux)
 ```
 
+Pass an audio/video file and it is transcribed locally first (mlx-whisper — nothing
+leaves the machine, no per-minute API cost), then run through the same pipeline.
 A full run over the demo transcript costs a few cents.
 
 ## Project layout

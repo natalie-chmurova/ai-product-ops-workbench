@@ -202,14 +202,42 @@ left, right = st.columns([1, 1.35], gap="large")
 
 with left:
     st.subheader("Input — meeting transcript")
+    audio = st.file_uploader(
+        "🎙️ Upload an audio recording (transcribed locally, nothing leaves your machine):",
+        type=["m4a", "mp3", "wav", "aiff", "aac", "mp4"],
+    )
+    if audio is not None:
+        key = f"{audio.name}:{audio.size}"
+        if st.session_state.get("tx_key") != key:
+            import os
+            import tempfile
+
+            from src.transcribe import transcribe_audio
+
+            with st.spinner("Transcribing audio locally…"):
+                suffix = os.path.splitext(audio.name)[1] or ".m4a"
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tf:
+                    tf.write(audio.getvalue())
+                    tmp = tf.name
+                try:
+                    st.session_state["tx_text"] = transcribe_audio(tmp)
+                    st.session_state["tx_key"] = key
+                finally:
+                    os.unlink(tmp)
+        default_text = st.session_state.get("tx_text", DEMO_TRANSCRIPT)
+    else:
+        default_text = DEMO_TRANSCRIPT
+
     transcript = st.text_area(
-        "Paste a transcript, or use the built-in demo:",
-        value=DEMO_TRANSCRIPT,
-        height=440,
+        "Paste a transcript, use the built-in demo, or edit the transcription above:",
+        value=default_text,
+        height=400,
     )
     col_a, col_b = st.columns([1, 1])
     run = col_a.button("✨ Generate artifacts", type="primary", use_container_width=True)
     if col_b.button("↺ Reset to demo", use_container_width=True):
+        st.session_state.pop("tx_key", None)
+        st.session_state.pop("tx_text", None)
         st.rerun()
 
 

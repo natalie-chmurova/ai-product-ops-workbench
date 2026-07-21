@@ -26,6 +26,7 @@ from src.artifacts import build_bug_triage, build_sprint_summary, build_tasks
 from src.client import WorkbenchError
 from src.extract import extract_context
 from src.render import render_report
+from src.transcribe import is_audio, transcribe_audio
 
 load_dotenv()  # read ANTHROPIC_API_KEY from a local .env if present
 
@@ -47,9 +48,13 @@ def _under_cwd(path: Path) -> bool:
 
 def run(transcript_path: Path) -> None:
     if not transcript_path.exists():
-        raise WorkbenchError(f"Transcript file not found: {transcript_path}")
+        raise WorkbenchError(f"File not found: {transcript_path}")
 
-    transcript = transcript_path.read_text(encoding="utf-8")
+    if is_audio(transcript_path):
+        print("Stage 0/3  Transcribing audio (local, no upload)...")
+        transcript = transcribe_audio(transcript_path)
+    else:
+        transcript = transcript_path.read_text(encoding="utf-8")
     OUTPUT_DIR.mkdir(exist_ok=True)
 
     print("Stage 1/3  Understanding the transcript...")
@@ -73,8 +78,8 @@ def run(transcript_path: Path) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Turn a meeting transcript into product-ops artifacts.")
-    parser.add_argument("transcript", type=Path, help="Path to a transcript .txt file")
+    parser = argparse.ArgumentParser(description="Turn a meeting transcript (or audio recording) into product-ops artifacts.")
+    parser.add_argument("transcript", type=Path, help="Path to a transcript .txt or an audio file (.m4a/.mp3/.wav/...)")
     args = parser.parse_args()
     try:
         run(args.transcript)
