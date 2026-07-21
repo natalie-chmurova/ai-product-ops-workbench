@@ -399,6 +399,20 @@
       ],
       "id": "s3_tgno",
       "name": "Notify rejected (Telegram)"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const fs = require('fs');\nconst j = $json;\nconst entry = {\n  ts: new Date().toISOString(),\n  point: j.name,\n  decision: j.is_update ? 'UPDATE' : 'NEW',\n  target: j.target_id || null,\n  confidence: j.confidence,\n  reason: j.reason,\n  gate: (j.confidence >= 0.8) ? 'auto' : 'human'\n};\nfs.appendFileSync('evals/decision_log.jsonl', JSON.stringify(entry) + '\\n');\nreturn { json: j };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        140
+      ],
+      "id": "s3_log",
+      "name": "Log decision"
     }
   ],
   "connections": {
@@ -472,7 +486,7 @@
       "main": [
         [
           {
-            "node": "Confident?",
+            "node": "Log decision",
             "type": "main",
             "index": 0
           }
@@ -578,6 +592,17 @@
         [
           {
             "node": "Confirm done (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log decision": {
+      "main": [
+        [
+          {
+            "node": "Confident?",
             "type": "main",
             "index": 0
           }

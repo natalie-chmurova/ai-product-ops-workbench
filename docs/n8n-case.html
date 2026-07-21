@@ -181,6 +181,13 @@
   that produced it) took it to <b>100% / 100%</b> — with the false-match traps still correctly
   classified as new. Measure, find the concrete failure, fix, re-measure.</p>
 
+  <h2>Feedback loop</h2>
+  <p>The workflow logs <b>every</b> agent decision — what it decided, its confidence, and whether
+  it auto-executed or was escalated. A short review script turns that log into the week's shortlist:
+  the low-confidence, human-gated calls, sorted by confidence, with the agent's own reason for being
+  unsure. Those ambiguous cases are exactly what gets added to the eval set and used to tune the SOP.
+  Human approvals aren't just a gate — they become the signal that makes the agent better.</p>
+
   <div class="links">
     <a href="https://github.com/natalie-chmurova/ai-product-ops-workbench">← Code &amp; repo</a>
     <a href="https://natalie-chmurova.github.io/ai-product-ops-workbench/">Related: Workbench live demo →</a>
