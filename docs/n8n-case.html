@@ -174,10 +174,12 @@
   scored by an <b>LLM-as-judge</b> for precision/recall: <b>100% / 100%</b> over 3 runs.</p>
   <p><b>Agent decisions</b> — the harder, more interesting one. A labeled board plus meeting points
   with deliberate traps (same work phrased differently; new work that sounds like an existing task),
-  scoring the agent's <b>new-vs-update</b> call by exact match: <b>90% decision · 83% target
-  accuracy</b>. The eval reliably surfaces a real, reproducible failure — the agent doesn't connect
-  a point describing a task's <i>outcome</i> ("placeholder image shipped") to the task itself ("fix
-  the empty-images crash"). That is exactly what an eval is for: a concrete thing to fix, not a vibe.</p>
+  scoring the agent's <b>new-vs-update</b> call by exact match. The first run scored 90% decision /
+  83% target — and the eval pinned down exactly why: the agent didn't connect a point describing a
+  task's <i>outcome</i> ("placeholder image shipped") to the task itself ("fix the empty-images
+  crash"). One rule added to the match prompt (treat a completed outcome as an update to the task
+  that produced it) took it to <b>100% / 100%</b> — with the false-match traps still correctly
+  classified as new. Measure, find the concrete failure, fix, re-measure.</p>
 
   <div class="links">
     <a href="https://github.com/natalie-chmurova/ai-product-ops-workbench">← Code &amp; repo</a>

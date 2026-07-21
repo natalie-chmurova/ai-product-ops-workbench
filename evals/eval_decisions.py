@@ -53,6 +53,9 @@ Detail: {detail}
 Rules:
 - Prefer UPDATE when the point clearly concerns the same work as an existing task, even with
   different wording.
+- A point describing the RESULT, OUTCOME, or COMPLETION of work (e.g. "X shipped", "the fix
+  went out", "Y is done", "we deployed Z") is an UPDATE to the task that produced it — match it
+  to that task; do not treat a finished outcome as new work.
 - Use NEW only when no existing task reasonably covers it.
 - If you are torn between two tasks or unsure, LOWER your confidence. Never guess silently.
 
