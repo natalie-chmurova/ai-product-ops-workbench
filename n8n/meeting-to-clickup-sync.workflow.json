@@ -403,7 +403,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const fs = require('fs');\nconst j = $json;\nconst entry = {\n  ts: new Date().toISOString(),\n  point: j.name,\n  decision: j.is_update ? 'UPDATE' : 'NEW',\n  target: j.target_id || null,\n  confidence: j.confidence,\n  reason: j.reason,\n  gate: (j.confidence >= 0.8) ? 'auto' : 'human'\n};\nfs.appendFileSync('evals/decision_log.jsonl', JSON.stringify(entry) + '\\n');\nreturn { json: j };"
+        "jsCode": "const fs = require('fs');\nconst j = $json;\nconst entry = {\n  ts: new Date().toISOString(),\n  point: j.name,\n  decision: j.is_update ? 'UPDATE' : 'NEW',\n  target: j.target_id || null,\n  confidence: j.confidence,\n  reason: j.reason,\n  gate: (j.confidence >= 0.8) ? 'auto' : 'human',\n  idem_key: j.idem_key || null,\n  duplicate: !!j.is_duplicate\n};\nfs.appendFileSync('/Users/nchmurova/Job Search/ai-product-ops-workbench/evals/decision_log.jsonl', JSON.stringify(entry) + '\\n');\nreturn { json: j };"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -413,6 +413,68 @@
       ],
       "id": "s3_log",
       "name": "Log decision"
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst crypto = require('crypto');\nconst STORE = 'state/processed_effects.jsonl';\nfunction normalize(t){return (t||'').toLowerCase().replace(/\\s+/g,' ').trim();}\nfunction effectKey(kind,target,content){\n  const payload = kind==='UPDATE' ? ('UPDATE|'+target+'|'+normalize(content))\n                                  : ('NEW|'+normalize(content));\n  return crypto.createHash('sha1').update(payload,'utf8').digest('hex');\n}\nlet committed = new Set();\ntry {\n  for (const line of fs.readFileSync(STORE,'utf8').split('\\n')) {\n    const s = line.trim(); if(!s) continue;\n    try { committed.add(JSON.parse(s).key); } catch(e){}\n  }\n} catch(e) { /* no store yet */ }\nconst seen = new Set();\nconst out = [];\nfor (let i = 0; i < items.length; i++) {\n  const j = items[i].json;\n  const kind = j.is_update ? 'UPDATE' : 'NEW';\n  const content = j.is_update ? (j.comment||'')\n                              : (((j.name||'')+' '+(j.description||'')).trim());\n  const key = effectKey(kind, j.target_id||'', content);\n  const is_duplicate = committed.has(key) || seen.has(key);\n  if (!is_duplicate) seen.add(key);\n  out.push({ json: Object.assign({}, j, { idem_key: key, is_duplicate }), pairedItem: { item: i } });\n}\nreturn out;",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "idempotency-check",
+      "name": "Idempotency check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -40,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "freshonly",
+              "leftValue": "={{ $json.is_duplicate }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "fresh-only",
+      "name": "Fresh only",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        180,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Runs once for all items, AFTER the apply nodes. The apply node\n// (httpRequest/clickUp) overwrites $json with the API response and loses the\n// paired item, so we read the enriched, marked items straight from\n// \"Idempotency check\" and commit the fresh keys. Idempotent write: never\n// re-appends a key already in the store, so running twice is safe.\nconst fs = require('fs');\nconst STORE = 'state/processed_effects.jsonl';\nlet existing = new Set();\ntry {\n  for (const line of fs.readFileSync(STORE, 'utf8').split('\\n')) {\n    const s = line.trim(); if (!s) continue;\n    try { existing.add(JSON.parse(s).key); } catch (e) {}\n  }\n} catch (e) { /* no store yet */ }\nlet marked = 0;\nfor (const m of $('Idempotency check').all()) {\n  const j = m.json;\n  if (j && j.idem_key && !j.is_duplicate && !existing.has(j.idem_key)) {\n    const rec = {\n      key: j.idem_key,\n      kind: j.is_update ? 'UPDATE' : 'NEW',\n      target: j.target_id || null,\n      preview: (j.name || '').slice(0,60),\n      ts: new Date().toISOString(),\n      source: 'sync'\n    };\n    fs.appendFileSync(STORE, JSON.stringify(rec) + '\\n');\n    existing.add(j.idem_key);\n    marked++;\n  }\n}\nreturn [{ json: { marked } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "mark-processed",
+      "name": "Mark processed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        480
+      ]
     }
   ],
   "connections": {
@@ -486,7 +548,7 @@
       "main": [
         [
           {
-            "node": "Log decision",
+            "node": "Idempotency check",
             "type": "main",
             "index": 0
           }
@@ -580,6 +642,11 @@
       "main": [
         [
           {
+            "node": "Mark processed",
+            "type": "main",
+            "index": 0
+          },
+          {
             "node": "Confirm done (Telegram)",
             "type": "main",
             "index": 0
@@ -590,6 +657,11 @@
     "Create task (appr)": {
       "main": [
         [
+          {
+            "node": "Mark processed",
+            "type": "main",
+            "index": 0
+          },
           {
             "node": "Confirm done (Telegram)",
             "type": "main",
@@ -602,7 +674,52 @@
       "main": [
         [
           {
+            "node": "Fresh only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Idempotency check": {
+      "main": [
+        [
+          {
+            "node": "Log decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fresh only": {
+      "main": [
+        [
+          {
             "node": "Confident?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Add comment (auto)": {
+      "main": [
+        [
+          {
+            "node": "Mark processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create task (auto)": {
+      "main": [
+        [
+          {
+            "node": "Mark processed",
             "type": "main",
             "index": 0
           }

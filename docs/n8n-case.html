@@ -188,6 +188,21 @@
   unsure. Those ambiguous cases are exactly what gets added to the eval set and used to tune the SOP.
   Human approvals aren't just a gate — they become the signal that makes the agent better.</p>
 
+  <h2>Idempotency — re-running is safe</h2>
+  <p>Re-processing the same meeting shouldn't double the board. The guard is keyed on the
+  <b>applied effect</b> (a SHA-1 of the normalized comment/task, computed after the agent decides):
+  a check node suppresses effects already in a local store, and the key is written <b>only after a
+  successful apply</b> — so a failure never permanently silences an effect. The core is a small
+  Python module (<code>src/idempotency.py</code>) with 11 passing tests and a no-API demo that
+  proves the invariant: <b>run a fixed set of effects twice → the second run applies 0</b>. The same
+  three nodes are mirrored into the n8n workflow (crypto + fs).</p>
+  <p><b>Two layers, honestly bounded.</b> The deterministic key catches the <i>verbatim</i> repeat
+  (a retry, a duplicate webhook); the semantic Match agent catches the <i>rephrased</i> repeat. And
+  a real boundary the live end-to-end surfaced: a full re-run re-invokes a non-deterministic LLM that
+  rewords items, so content hashes drift — a verbatim-recurring item is caught (verified: identical
+  key across three runs), but full re-run coverage would need deterministic extraction or a stable
+  <code>meeting_id + item_id</code> key. Naming that boundary is the point.</p>
+
   <div class="links">
     <a href="https://github.com/natalie-chmurova/ai-product-ops-workbench">← Code &amp; repo</a>
     <a href="https://natalie-chmurova.github.io/ai-product-ops-workbench/">Related: Workbench live demo →</a>

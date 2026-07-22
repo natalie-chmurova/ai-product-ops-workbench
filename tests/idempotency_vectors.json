@@ -1,0 +1,11 @@
+{
+  "normalize": [
+    {"in": "  Saved   cards\n unblocked ", "out": "saved cards unblocked"},
+    {"in": "iOS", "out": "ios"}
+  ],
+  "effect_key": [
+    {"kind": "UPDATE", "target": "86eyay0p7", "content": "Saved cards feature unblocked", "key": "48c7e738b2b8911f66739a32236f6e0af99c1ebf"},
+    {"kind": "UPDATE", "target": "86ey9z6rc", "content": "Crash fix in code review", "key": "ea4e60440d94fb037f741c56f4377c2e26a420c8"},
+    {"kind": "NEW", "target": "", "content": "Investigate iOS checkout funnel  Pull session data and find where users drop off", "key": "cc2e2b757a17de13322942c6229404f2305a30ba"}
+  ]
+}
