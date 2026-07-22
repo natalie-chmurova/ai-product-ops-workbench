@@ -177,6 +177,35 @@ The system covers both user scenarios, but with **two different mechanisms**:
 Stating this prevents the false expectation that a single hash "understands meaning",
 and it strengthens the story (two complementary guards) rather than weakening it.
 
+## e2e finding: non-deterministic extraction (verified 2026-07-22)
+
+Running the full n8n workflow twice does NOT reduce to "0 duplicates", and that is
+expected. The board-sync workflow re-runs Extract + Match on every execution, and
+claude-sonnet-5 is non-deterministic — its `temperature` is not configurable (the node
+rejects it as deprecated for this model). So a re-run rephrases items: different titles,
+different descriptions, even a different item count (8 vs 6 across runs), which changes
+the content hash. Verified in the live runs — the stable item
+`[QA] Additional Android test devices approved` produced the identical key
+`4eeb0afc…` across three runs (correctly suppressible), while rephrased items drift to
+new keys.
+
+The honest boundary this establishes:
+- The guard deterministically suppresses a repeat of an *identical* effect — exactly
+  the real-world retry case: the same already-extracted payload delivered twice
+  (duplicate webhook, workflow retry, re-delivery). Proven cleanly by the Python demo
+  (double-run on a fixed set = 0 applied).
+- A full re-run through a non-deterministic LLM extractor is a *different* problem: the
+  input itself changes each time. Full coverage there needs a deterministic extractor,
+  or idempotency keyed on a stable external `meeting_id + item_id` rather than on
+  generated content.
+
+What the live n8n run DID verify: the mechanism is wired and works end-to-end —
+`Idempotency check` computes keys (crypto sha1), `Log decision` records a `duplicate`
+flag, `Mark processed` writes the store via fs **only after a successful apply** (the
+store matched the run's fresh effects), and `Fresh only` filters. The Mark-processed
+node reads the marked items from `$('Idempotency check').all()` rather than the post-apply
+`$json`, because the ClickUp apply node overwrites `$json` with its API response.
+
 ## Files touched
 
 **New:**
