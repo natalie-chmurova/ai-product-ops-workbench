@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.idempotency import IdempotencyStore, effect_key, normalize
+from src.idempotency import IdempotencyStore, apply_batch, effect_key, normalize
 
 VECTORS = json.loads(
     (Path(__file__).resolve().parent / "idempotency_vectors.json").read_text(encoding="utf-8")
@@ -58,3 +58,21 @@ def test_malformed_line_is_ignored(tmp_path):
     p.write_text('{"key": "good"}\nnot json\n{"nokey": 1}\n', encoding="utf-8")
     store = IdempotencyStore(p)
     assert store.is_duplicate("good") is True
+
+
+def test_second_run_applies_nothing(tmp_path):
+    effects = [("UPDATE", "t1", "saved cards unblocked"),
+               ("NEW", "", "investigate ios funnel"),
+               ("UPDATE", "t2", "crash fix in review")]
+    store = IdempotencyStore(tmp_path / "s.jsonl")
+    applied1, skipped1 = apply_batch(effects, store)
+    applied2, skipped2 = apply_batch(effects, store)
+    assert (applied1, skipped1) == (3, 0)
+    assert (applied2, skipped2) == (0, 3)
+
+
+def test_duplicate_within_one_batch_applied_once(tmp_path):
+    effects = [("UPDATE", "t1", "same"), ("UPDATE", "t1", "same")]
+    store = IdempotencyStore(tmp_path / "s.jsonl")
+    applied, skipped = apply_batch(effects, store)
+    assert (applied, skipped) == (1, 1)

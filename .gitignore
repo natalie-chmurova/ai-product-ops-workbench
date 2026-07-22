@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .DS_Store
 outputs/
+state/processed_effects.jsonl
 .venv/
 
 # streamlit secrets, if used
