@@ -34,8 +34,10 @@ Prompts live in [`prompts/`](prompts/) as plain Markdown — the product logic i
 first-class and editable without touching code.
 
 **Send to ClickUp (optional):** with a `CLICKUP_API_TOKEN` set, the web app shows a
-"Send to ClickUp" button that creates the generated tasks — titled, prioritized, and
-tagged — directly in a ClickUp list, so a meeting turns into a populated board in one click.
+"Send to ClickUp" button that creates the generated tasks — titled, prioritized, tagged,
+and **assigned to the resolved owner** — directly in a ClickUp list, so a meeting turns
+into a populated board in one click. Owner names resolve to real assignees via an alias
+map (`OWNER_ALIASES`) → fuzzy match on workspace members → unassigned fallback.
 
 ## Run it
 

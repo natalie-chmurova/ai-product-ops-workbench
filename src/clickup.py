@@ -55,7 +55,7 @@ def get_lists() -> list[dict]:
     return out
 
 
-def _create_task(list_id: str, task: dict) -> tuple[bool, str]:
+def _create_task(list_id: str, task: dict, assignee_id: str | None = None) -> tuple[bool, str]:
     """Create one task. Returns (ok, task_name_or_error)."""
     payload = {
         "name": str(task.get("name", "Untitled task"))[:250],
@@ -64,6 +64,8 @@ def _create_task(list_id: str, task: dict) -> tuple[bool, str]:
     priority = task.get("priority")
     if priority in (1, 2, 3, 4):
         payload["priority"] = priority
+    if assignee_id:
+        payload["assignees"] = [int(assignee_id)]
     tags = [str(t) for t in task.get("tags", [])]
     if tags:
         payload["tags"] = tags
@@ -98,16 +100,29 @@ def push_tasks(tasks: list, list_id: str | None = None) -> dict:
     if not tasks:
         raise WorkbenchError("There are no tasks to send. Generate artifacts first.")
 
-    created, failures = 0, []
+    # Resolve owners to real assignees once (members + alias map fetched up front).
+    from .assignees import alias_map, get_members, resolve_owner
+
+    try:
+        members = get_members()
+    except Exception:
+        members = []
+    aliases = alias_map()
+
+    created, assigned, failures = 0, 0, []
     for task in tasks:
-        ok, info = _create_task(list_id, task)
+        assignee_id = resolve_owner(task.get("owner"), members, aliases)
+        ok, info = _create_task(list_id, task, assignee_id)
         if ok:
             created += 1
+            if assignee_id:
+                assigned += 1
         else:
             failures.append(info)
 
     return {
         "created": created,
+        "assigned": assigned,
         "failed": failures,
         "total": len(tasks),
         "list_url": list_url(list_id),

@@ -186,7 +186,10 @@ def render_clickup(tasks: list) -> None:
                 with st.spinner("Creating tasks in ClickUp…"):
                     summary = push_tasks(tasks, target)
                 if summary["created"]:
-                    st.success(f"Created {summary['created']} of {summary['total']} tasks in ClickUp.")
+                    st.success(
+                        f"Created {summary['created']} of {summary['total']} tasks in ClickUp"
+                        f" · {summary.get('assigned', 0)} assigned to an owner."
+                    )
                     st.markdown(f"➡️ [Open the ClickUp board]({summary['list_url']})")
                 if summary["failed"]:
                     st.warning(
