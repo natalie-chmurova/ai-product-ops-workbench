@@ -203,6 +203,16 @@
   key across three runs), but full re-run coverage would need deterministic extraction or a stable
   <code>meeting_id + item_id</code> key. Naming that boundary is the point.</p>
 
+  <h2>Owner-assignment — tasks land on the right person</h2>
+  <p>A task with no owner is half a task. The workflow now reads an <b>owner</b> from each extracted
+  point — the name mentioned in the transcript — and resolves it to a real ClickUp assignee: an
+  <b>alias map</b> (teams have nicknames) → a <b>fuzzy match</b> on workspace members → <b>Unassigned</b>
+  as an honest fallback. Both write paths set it — the auto branch and the post-approval branch — so
+  ownership survives the human-in-the-loop gate. Verified end-to-end: a new point with
+  <code>owner = "Marco"</code> created a ClickUp task assigned to a real user id. The resolver is a
+  tested Python module (<code>src/assignees.py</code>), and the map is <b>config-driven</b> — real
+  teammates in production, a single account in the demo workspace.</p>
+
   <div class="links">
     <a href="https://github.com/natalie-chmurova/ai-product-ops-workbench">← Code &amp; repo</a>
     <a href="https://natalie-chmurova.github.io/ai-product-ops-workbench/">Related: Workbench live demo →</a>
