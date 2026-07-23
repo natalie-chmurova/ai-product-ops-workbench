@@ -115,7 +115,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Parse the match agent's decision and merge with the meeting point\nconst content = $json.content || [];\nconst tb = content.find(c => c.type === 'text') || content[0] || {};\nconst t = tb.text || '';\nconst decision = ((t.match(/DECISION:\\s*(NEW|UPDATE)/i) || [])[1] || 'NEW').toUpperCase();\nconst taskId = ((t.match(/TASK_ID:\\s*([a-z0-9]+)/i) || [])[1] || '');\nlet confidence = Number((t.match(/CONFIDENCE:\\s*([\\d.]+)/i) || [])[1] || 0);\nconst reason = ((t.match(/REASON:\\s*(.+)/i) || [])[1] || '').trim();\nconst item = $('Parse tasks').item.json;\nconst board = $('Board summary').first().json.boardText || '';\nconst is_update = decision === 'UPDATE';\nif (is_update && (!taskId || !board.includes(taskId))) confidence = 0;\nconst comment = (item.description || item.name || '').trim();\nconst action_summary = is_update\n  ? ('comment on existing task ' + taskId + ': ' + item.name)\n  : ('create a new task: ' + item.name);\nreturn { json: Object.assign({}, item, { is_update, target_id: taskId, confidence, reason, comment, action_summary }) };"
+        "jsCode": "// Parse the match agent's decision and merge with the meeting point\nconst content = $json.content || [];\nconst tb = content.find(c => c.type === 'text') || content[0] || {};\nconst t = tb.text || '';\nconst decision = ((t.match(/DECISION:\\s*(NEW|UPDATE)/i) || [])[1] || 'NEW').toUpperCase();\nconst taskId = ((t.match(/TASK_ID:\\s*([a-z0-9]+)/i) || [])[1] || '');\nlet confidence = Number((t.match(/CONFIDENCE:\\s*([\\d.]+)/i) || [])[1] || 0);\nconst reason = ((t.match(/REASON:\\s*(.+)/i) || [])[1] || '').trim();\nconst item = $('Parse tasks').item.json;\nconst board = $('Board summary').first().json.boardText || '';\nconst is_update = decision === 'UPDATE';\nif (is_update && (!taskId || !board.includes(taskId))) confidence = 0;\nconst comment = (item.description || item.name || '').trim();\nconst display_name = (item.name || '').replace(/\\]\\s*\\[/g, ' / ').replace(/[\\[\\]]/g, '');\n  const action_summary = is_update\n  ? ('comment on existing task ' + taskId + ': ' + display_name)\n  : ('create a new task: ' + display_name);\nreturn { json: Object.assign({}, item, { is_update, target_id: taskId, confidence, reason, comment, action_summary, display_name }) };"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -239,7 +239,7 @@
       "parameters": {
         "operation": "sendAndWait",
         "chatId": "YOUR_CHAT_ID",
-        "message": "=🤖 Needs your approval\n\nProposed: {{ $json.action_summary }}\n\n📌 {{ $json.name }}\nConfidence: {{ $json.confidence }} · {{ $json.reason }}\n\n{{ $json.is_update ? 'Proposed comment: ' + $json.comment : $json.description }}",
+        "message": "=🤖 Needs your approval\n\nProposed: {{ $json.action_summary }}\n\n📌 {{ $json.display_name }}\nConfidence: {{ $json.confidence }} · {{ $json.reason }}\n\n{{ $json.is_update ? 'Proposed comment: ' + $json.comment : $json.description }}",
         "approvalOptions": {
           "values": {
             "approvalType": "double",
