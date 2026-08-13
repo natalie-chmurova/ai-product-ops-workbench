@@ -1,0 +1,43 @@
+Weekly Product Sync (messy) — Northwind mobile marketplace app
+Attendees: Dana (Product), Marco (Engineering), Priya (Design), Sam (QA), Alex (Engineering, joins late)
+
+Dana: Okay are we — can everyone hear me? I think Sam you're on mute.
+Sam: Sorry, yeah. Hi.
+Dana: Right. So, um, quick one today, I've got a hard stop at half past. Let's just go round.
+Marco: I can start. So the search thing, the — hang on, sorry, my dog. The search relevance work, I looked at it and honestly it's messier than we thought, the ranking is doing something weird when the query has more than like three words, I don't fully understand it yet.
+Dana: Is that the same thing Priya flagged last week?
+Marco: Kind of? Not exactly. Hers was about the empty state.
+Priya: It was about the empty state, yeah. That one's fine now.
+Dana: Okay so — sorry, so what do we do about search.
+Marco: I need to dig more. Give me a couple of days.
+Dana: Fine, let's say you'll come back Thursday with, like, an actual diagnosis.
+
+Sam: Can I jump in on the release? We said we'd cut it Wednesday.
+Dana: Yeah, Wednesday.
+Sam: I don't think Wednesday works, we haven't finished regression on the payments flow, and there's the thing with the — Marco is the tokenization thing done?
+Marco: It's done on their side. Ours isn't wired up.
+Sam: Right so, Wednesday is not realistic.
+Dana: Ugh. Okay. Let's move the release to Friday.
+Priya: Friday is bad for me, I'm out Friday.
+Dana: ...Do we need you for the release?
+Priya: Probably not, but if something looks broken visually there's nobody.
+Dana: Okay, you know what, let's not move it to Friday. Let's keep Wednesday but cut the payments piece out of the release. Ship the rest.
+Sam: That works.
+Marco: Yeah, that's cleaner.
+
+Alex: Sorry I'm late, what did I miss.
+Dana: Release is Wednesday, payments is out of it.
+Alex: Ah. Okay. Also — unrelated — a bunch of users are emailing about the notifications being duplicated. Like the same push twice.
+Dana: Since when?
+Alex: I don't know, a few days? Support forwarded me maybe six or seven.
+Dana: That's — okay that's not great. Someone should look at that.
+Marco: I'm on search.
+Sam: I'm on regression until Wednesday.
+Dana: Right. Let's park it for now, we'll figure out who picks it up. But it needs to get looked at this week.
+
+Dana: Anything else? Two minutes.
+Priya: The onboarding illustrations, do we want them for this release or —
+Dana: Next one.
+Priya: Cool.
+Dana: Okay, thanks everyone. Oh — Marco, Thursday, search diagnosis, don't forget.
+Marco: Yep.
