@@ -14,6 +14,11 @@
   body{margin:0;background:var(--bg);color:var(--text);
     font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
   .wrap{max-width:940px;margin:0 auto;padding:44px 24px 64px;}
+  table{border-collapse:collapse;margin:16px 0;font-size:14px;max-width:640px;width:100%;}
+  th,td{border:1px solid var(--line);padding:8px 12px;text-align:left;}
+  th{background:var(--panel);color:var(--soft);font-weight:600;}
+  td{background:var(--panel2);color:var(--text);}
+  td:not(:first-child),th:not(:first-child){text-align:right;width:110px;}
   .eyebrow{color:var(--accent);font-size:12px;font-weight:700;letter-spacing:.14em;
     text-transform:uppercase;margin:0 0 10px;}
   h1{font-size:30px;line-height:1.2;letter-spacing:-.02em;margin:0 0 12px;text-wrap:balance;}
@@ -170,8 +175,23 @@
 
   <h2>Evals — measured, not vibes-checked</h2>
   <p>Two harnesses (<a href="https://github.com/natalie-chmurova/ai-product-ops-workbench/tree/main/evals">evals/</a>):</p>
-  <p><b>Extraction quality</b> — a labeled ground-truth transcript (8 must-have + 3 debatable tasks)
-  scored by an <b>LLM-as-judge</b> for precision/recall: <b>100% / 100%</b> over 3 runs.</p>
+  <p><b>Extraction quality</b> — labeled ground-truth transcripts scored by an <b>LLM-as-judge</b>
+  for precision/recall, 3 runs each. On the clean, well-structured transcript it scores
+  <b>100% / 100%</b> — which, on its own, is weak evidence. So the benchmark now also includes
+  transcripts that are deliberately messy: interruptions and filler, a decision reversed twice
+  mid-call, an action item nobody owns, an incident that resolved itself.</p>
+  <table>
+    <tr><th>transcript</th><th>recall</th><th>precision</th></tr>
+    <tr><td>clean</td><td>100%</td><td>100%</td></tr>
+    <tr><td>messy — reversed decision, ownerless item</td><td>67%</td><td>83%</td></tr>
+    <tr><td>messy — noise, task raised in passing</td><td>100%</td><td>94%</td></tr>
+  </table>
+  <p>The drop is the useful part, and it is specific rather than vague: on the hardest transcript
+  the pipeline reliably misses the <i>final</i> decision when it was reached by reversing an earlier
+  one ("Wednesday → Friday → Wednesday, minus payments"), and misses work that gets spun out of a
+  release in a throwaway line ("ours isn't wired up"). Extraction also collapses to 3–6 items where
+  the clean transcript yields 10. That is a named, reproducible weakness to fix — not a number to
+  quote.</p>
   <p><b>Agent decisions</b> — the harder, more interesting one. A labeled board plus meeting points
   with deliberate traps (same work phrased differently; new work that sounds like an existing task),
   scoring the agent's <b>new-vs-update</b> call by exact match. The first run scored 90% decision /

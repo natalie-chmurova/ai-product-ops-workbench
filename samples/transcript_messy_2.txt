@@ -1,0 +1,43 @@
+Monday standup (messy) — Northwind mobile marketplace app
+Attendees: Dana (Product), Marco (Engineering), Sam (QA), Priya (Design)
+
+Sam: — and it was like forty minutes in traffic, for a twenty minute drive.
+Dana: Every Monday, same thing.
+Sam: Every Monday.
+Dana: Okay, um. Standup. Marco?
+Marco: Yeah so, nothing exciting. I was mostly in the search thing still. I said Thursday and it slipped, sorry, I got pulled into the incident on Friday.
+Dana: The one with the images?
+Marco: No, the — the CDN thing. It's fine now, it resolved itself, we think it was on their end.
+Dana: Do we need to do anything about it?
+Marco: I don't think so. Maybe. If it happens again we should probably have alerting on it, because we found out from a user, which is not great.
+Dana: Yeah that's... yeah. Okay.
+Marco: Anyway. Search. I found the thing, it's the tokenizer, it splits on hyphens so "e-bike" becomes two terms and the scoring goes sideways. Fix is small, I'll do it today.
+Dana: Oh nice. So that's — that's the whole bug?
+Marco: For the multi-word thing, yeah, I'm fairly confident.
+
+Dana: Sam?
+Sam: Regression is done, everything green except one flaky test that fails maybe one in five, the checkout one. I don't know if it's the test or us.
+Dana: Can you find out?
+Sam: I can look, but honestly it's been flaky for like two months, it's not new.
+Dana: Still. It's noise every release.
+Sam: Yeah. Okay, I'll dig into it after the release.
+Dana: After the release, fine.
+
+Priya: I don't have much. Illustrations are in progress, they're for next release anyway.
+Dana: Yep.
+Priya: Oh, but — the thing where the price is cut off on small screens, did anyone ever pick that up?
+Marco: Cut off how?
+Priya: On the card, if the price is long, like five digits plus decimals, it just... clips. On the small Androids.
+Marco: Huh. No, I don't think anyone's on that.
+Dana: Is it new?
+Priya: I noticed it a while ago, I thought I mentioned it.
+Dana: Maybe in Slack? Anyway, that needs fixing, it looks broken.
+Marco: It's probably a layout thing, small.
+Dana: Okay.
+
+Dana: Anything else? I have to jump.
+Marco: The duplicated notifications from last week, did that get picked up?
+Dana: ...No. Nobody picked it up.
+Marco: Okay, I'll take it after search.
+Dana: Thank you. Okay, bye everyone.
+Sam: Bye.

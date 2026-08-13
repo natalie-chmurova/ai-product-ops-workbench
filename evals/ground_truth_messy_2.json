@@ -1,0 +1,46 @@
+{
+  "transcript": "samples/transcript_messy_2.txt",
+  "label": "messy 2 — noise, a task raised in passing, a hedged follow-up",
+  "status": "DRAFT — drafted by the assistant, needs product review (same open question as gt9-gt11 in the clean set)",
+  "note": "Ground truth for task extraction on a deliberately messy transcript. 'must' = a real task any competent PM would create. 'debatable' = reasonable to include or fold elsewhere; found = fine, missed = not penalized. Deliberate traps, intentionally NOT in this list: the traffic small talk is pure noise, and the CDN incident 'resolved itself' — the incident is not work, only the hedged alerting follow-up is.",
+  "tasks": [
+    {
+      "id": "gt1",
+      "summary": "Fix the search tokenizer splitting on hyphens (\"e-bike\" becomes two terms and scoring breaks)",
+      "owner_hint": "Marco",
+      "must": true
+    },
+    {
+      "id": "gt2",
+      "summary": "Fix long prices being clipped on the product card on small Android screens",
+      "owner_hint": "Marco",
+      "must": true
+    },
+    {
+      "id": "gt3",
+      "summary": "Investigate the flaky checkout regression test (fails ~1 in 5), scheduled after the release",
+      "owner_hint": "Sam",
+      "must": true
+    },
+    {
+      "id": "gt4",
+      "summary": "Pick up the duplicated push notifications issue carried over from last week",
+      "owner_hint": "Marco",
+      "must": true
+    },
+    {
+      "id": "gt5",
+      "summary": "Add alerting for CDN/availability problems so users are not the ones reporting them",
+      "owner_hint": "Marco",
+      "must": false,
+      "why_debatable": "Raised hedged (\"maybe\", \"if it happens again\") — a task or a backlog note are both defensible."
+    },
+    {
+      "id": "gt6",
+      "summary": "Onboarding illustrations, already in progress and targeted at the next release",
+      "owner_hint": "Priya",
+      "must": false,
+      "why_debatable": "A status update on existing work rather than new work — capturing it or skipping it are both defensible."
+    }
+  ]
+}
