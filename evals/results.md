@@ -1,4 +1,4 @@
-# Extraction eval — 2026-08-13
+# Extraction eval — 2026-08-14
 
 Pipeline: `extract_context` → `build_tasks` · judge: LLM-as-judge (Claude) · 3 runs per transcript.
 
@@ -8,9 +8,9 @@ Recall is measured over MUST items only; debatable items never penalize recall b
 
 | transcript | must / debatable | recall | precision |
 |---|---|---|---|
-| clean | 8 / 3 | 100% | 100% |
-| messy 1 — reversed decision, ownerless item | 5 / 1 | 67% | 83% |
-| messy 2 — noise, a task raised in passing, a hedged follow-up | 4 / 2 | 100% | 94% |
+| clean | 8 / 3 | 100% | 97% |
+| messy 1 — reversed decision, ownerless item | 5 / 1 | 73% | 100% |
+| messy 2 — noise, a task raised in passing, a hedged follow-up | 4 / 2 | 100% | 100% |
 
 ## clean
 
@@ -19,10 +19,10 @@ Recall is measured over MUST items only; debatable items never penalize recall b
 | run | tasks extracted | recall (must) | precision | missed |
 |---|---|---|---|---|
 | 1 | 10 | 100% | 100% | — |
-| 2 | 10 | 100% | 100% | — |
-| 3 | 10 | 100% | 100% | — |
+| 2 | 11 | 100% | 91% | — |
+| 3 | 9 | 100% | 100% | — |
 
-**Average: recall 100% · precision 100%**
+**Average: recall 100% · precision 97%**
 
 ## messy 1 — reversed decision, ownerless item
 
@@ -30,11 +30,11 @@ Recall is measured over MUST items only; debatable items never penalize recall b
 
 | run | tasks extracted | recall (must) | precision | missed |
 |---|---|---|---|---|
-| 1 | 3 | 60% | 100% | gt2, gt3 |
-| 2 | 6 | 60% | 50% | gt2, gt3 |
-| 3 | 4 | 80% | 100% | gt2 |
+| 1 | 4 | 80% | 100% | gt4 |
+| 2 | 3 | 60% | 100% | gt2, gt4 |
+| 3 | 4 | 80% | 100% | gt4 |
 
-**Average: recall 67% · precision 83%**
+**Average: recall 73% · precision 100%**
 
 ## messy 2 — noise, a task raised in passing, a hedged follow-up
 
@@ -43,7 +43,7 @@ Recall is measured over MUST items only; debatable items never penalize recall b
 | run | tasks extracted | recall (must) | precision | missed |
 |---|---|---|---|---|
 | 1 | 5 | 100% | 100% | — |
-| 2 | 6 | 100% | 83% | — |
+| 2 | 5 | 100% | 100% | — |
 | 3 | 5 | 100% | 100% | — |
 
-**Average: recall 100% · precision 94%**
+**Average: recall 100% · precision 100%**

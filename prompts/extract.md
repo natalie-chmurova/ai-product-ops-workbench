@@ -39,4 +39,15 @@ Rules:
 - Prefer specific over vague ("Handle empty product images" not "Fix the app").
 - If an owner is named, use their first name. If not, use "Unassigned".
 - Split compound items into separate entries.
+- Decisions get revised mid-conversation. Record only the FINAL position the team
+  settled on, not the options they abandoned along the way. If that final decision
+  implies work ("ship Wednesday but cut payments out"), also record that work as an
+  action item.
+- Work mentioned in passing still counts. A throwaway line ("ours isn't wired up",
+  "nobody picked that up", "that needs fixing") is an action item when the work is
+  real and unfinished — even if nobody was assigned and the conversation moved on.
+  Use "Unassigned" rather than dropping it.
+- Do not turn already-finished work into action items. If something is reported as
+  done or resolved ("that one's fine now", "it resolved itself"), it belongs in
+  sprint_signals, not action_items.
 - Return valid JSON and nothing else.

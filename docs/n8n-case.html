@@ -180,18 +180,24 @@
   <b>100% / 100%</b> — which, on its own, is weak evidence. So the benchmark now also includes
   transcripts that are deliberately messy: interruptions and filler, a decision reversed twice
   mid-call, an action item nobody owns, an incident that resolved itself.</p>
+  <p>The drop was the useful part, and it was specific rather than vague: on the hardest transcript
+  the pipeline reliably missed the <i>final</i> decision when it was reached by reversing an earlier
+  one ("Wednesday → Friday → Wednesday, minus payments"), and missed work spun out of a release in a
+  throwaway line ("ours isn't wired up"). So I added three rules to the extraction prompt — keep only
+  the final position after a reversal, treat a throwaway line as real work, and never turn
+  already-finished work into a task — and measured again:</p>
   <table>
     <tr><th>transcript</th><th>recall</th><th>precision</th></tr>
-    <tr><td>clean</td><td>100%</td><td>100%</td></tr>
-    <tr><td>messy — reversed decision, ownerless item</td><td>67%</td><td>83%</td></tr>
-    <tr><td>messy — noise, task raised in passing</td><td>100%</td><td>94%</td></tr>
+    <tr><td>clean</td><td>100% → 100%</td><td>100% → 97%</td></tr>
+    <tr><td>messy — reversed decision, ownerless item</td><td>67% → 73%</td><td>83% → 100%</td></tr>
+    <tr><td>messy — noise, task raised in passing</td><td>100% → 100%</td><td>94% → 100%</td></tr>
   </table>
-  <p>The drop is the useful part, and it is specific rather than vague: on the hardest transcript
-  the pipeline reliably misses the <i>final</i> decision when it was reached by reversing an earlier
-  one ("Wednesday → Friday → Wednesday, minus payments"), and misses work that gets spun out of a
-  release in a throwaway line ("ours isn't wired up"). Extraction also collapses to 3–6 items where
-  the clean transcript yields 10. That is a named, reproducible weakness to fix — not a number to
-  quote.</p>
+  <p><b>The honest read: the fix solved the noise problem, not the recall problem.</b> Precision went
+  to 100% on both messy transcripts — the "already done isn't a task" rule did its job. Recall moved
+  67% → 73%, which is inside run-to-run noise, and the miss simply relocated: the pipeline now
+  catches the tokenization line it used to drop, but starts dropping the regression-testing item
+  instead. Extraction still collapses to 3–4 items on a messy transcript where the ground truth has
+  five. That is a real, still-open weakness, and I would rather name it than round it up.</p>
   <p><b>Agent decisions</b> — the harder, more interesting one. A labeled board plus meeting points
   with deliberate traps (same work phrased differently; new work that sounds like an existing task),
   scoring the agent's <b>new-vs-update</b> call by exact match. The first run scored 90% decision /
