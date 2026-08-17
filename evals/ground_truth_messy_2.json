@@ -1,46 +1,69 @@
 {
   "transcript": "samples/transcript_messy_2.txt",
   "label": "messy 2 — noise, a task raised in passing, a hedged follow-up",
-  "status": "DRAFT — drafted by the assistant, needs product review (same open question as gt9-gt11 in the clean set)",
-  "note": "Ground truth for task extraction on a deliberately messy transcript. 'must' = a real task any competent PM would create. 'debatable' = reasonable to include or fold elsewhere; found = fine, missed = not penalized. Deliberate traps, intentionally NOT in this list: the traffic small talk is pure noise, and the CDN incident 'resolved itself' — the incident is not work, only the hedged alerting follow-up is.",
+  "status": "VALIDATED by Natallia (17 Aug 2026) — labels below reflect her product judgement, not the assistant's draft",
+  "note": "Ground truth for task extraction on a deliberately messy transcript. 'must' = a real NEW task any competent PM would create. 'debatable' = reasonable to include or fold elsewhere; found = fine, missed = not penalized. Deliberate traps, intentionally NOT in this list: the traffic small talk is pure noise, and the CDN incident itself 'resolved itself' — the incident is not work, only the alerting follow-up is.",
+  "manager_notes": [
+    {
+      "item": "Marco's search diagnosis slipped from Thursday",
+      "verdict": "NOT a task — a slipped commitment. Expected effect: a comment on the existing search task recording that it slipped and why (pulled into the CDN incident), so the manager can re-prioritise.",
+      "expected_effect": "comment on existing task"
+    },
+    {
+      "item": "Sam: 'regression is done, everything green except one flaky test'",
+      "verdict": "A completion claim, not a task. Expected effect: check the task's status on the board; if the developer hasn't moved it, notify the manager that it can go to In Review; and leave a comment about the still-failing test.",
+      "expected_effect": "verify status, notify, comment"
+    }
+  ],
   "tasks": [
     {
       "id": "gt1",
       "summary": "Fix the search tokenizer splitting on hyphens (\"e-bike\" becomes two terms and scoring breaks)",
       "owner_hint": "Marco",
-      "must": true
+      "must": true,
+      "type": "bug",
+      "manager_note": "A separate bug, linked to Marco's parent search task. He said 'fix is small, I'll do it today' — so the deadline is that same day."
     },
     {
       "id": "gt2",
       "summary": "Fix long prices being clipped on the product card on small Android screens",
-      "owner_hint": "Marco",
-      "must": true
+      "owner_hint": "unassigned",
+      "must": true,
+      "type": "bug",
+      "destination": "backlog",
+      "manager_note": "Newly surfaced defect → bug in the backlog, not the running sprint. Attach the context with the meeting date: Priya noticed it a while ago and thought she had mentioned it, Dana said it looks broken, Marco expects a small layout fix."
     },
     {
       "id": "gt3",
       "summary": "Investigate the flaky checkout regression test (fails ~1 in 5), scheduled after the release",
       "owner_hint": "Sam",
-      "must": true
+      "must": true,
+      "destination": "backlog",
+      "manager_note": "Sam said he'd dig into it after the release — record that context. Flaky for ~2 months, noise every release."
     },
     {
       "id": "gt4",
       "summary": "Pick up the duplicated push notifications issue carried over from last week",
       "owner_hint": "Marco",
-      "must": true
+      "must": true,
+      "manager_note": "Finally has an owner — Marco takes it after the search work. Set it as dependent on the search task; if that task has a deadline, a start date can be inferred from it."
     },
     {
       "id": "gt5",
       "summary": "Add alerting for CDN/availability problems so users are not the ones reporting them",
       "owner_hint": "Marco",
-      "must": false,
-      "why_debatable": "Raised hedged (\"maybe\", \"if it happens again\") — a task or a backlog note are both defensible."
+      "must": true,
+      "type": "bug",
+      "destination": "backlog",
+      "manager_note": "Raised hedged ('maybe', 'if it happens again') — but these are exactly the items that get lost. Record it as a bug in the backlog with the context; the manager decides later whether it earns a slot."
     },
     {
       "id": "gt6",
       "summary": "Onboarding illustrations, already in progress and targeted at the next release",
       "owner_hint": "Priya",
       "must": false,
-      "why_debatable": "A status update on existing work rather than new work — capturing it or skipping it are both defensible."
+      "why_debatable": "Check the task exists and whether it already carries a note or a deadline for the next release; the right effect is a deadline or a comment rather than a new task.",
+      "expected_effect": "set deadline or comment if the task already exists"
     }
   ]
 }

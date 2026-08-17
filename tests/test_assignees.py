@@ -1,6 +1,6 @@
 """Owner → assignee resolution (pure logic, no API)."""
 
-from src.assignees import normalize, resolve_owner
+from src.assignees import build_roster, normalize, resolve_owner, roster_line
 
 MEMBERS = [
     {"id": "222150225", "name": "Natallia Chmurova"},
@@ -37,3 +37,42 @@ def test_unassigned_is_none():
 def test_unknown_name_is_none():
     # A name with no alias and no member match stays unassigned.
     assert resolve_owner("Zoltan", MEMBERS, ALIASES) is None
+
+
+# --- roster: the closed list of people the pipeline is allowed to recognise ---
+
+RAW_ALIASES = "Dana:222150225, Priya:222150225"
+
+
+def test_roster_combines_members_and_aliases():
+    roster = build_roster(MEMBERS, RAW_ALIASES)
+    names = [r["name"] for r in roster]
+    assert "Natallia Chmurova" in names
+    assert "Marco Rossi" in names
+    assert "Dana" in names and "Priya" in names
+
+
+def test_roster_keeps_original_spelling():
+    # the prompt shows these names to the model, so "Dana" must not arrive as "dana"
+    roster = build_roster([], "Dana:1,  marco :2")
+    assert [r["name"] for r in roster] == ["Dana", "marco"]
+
+
+def test_roster_carries_ids():
+    roster = build_roster([], RAW_ALIASES)
+    assert roster[0] == {"name": "Dana", "id": "222150225"}
+
+
+def test_roster_dedupes_by_name():
+    # the same person configured both ways should appear once
+    roster = build_roster([{"id": "999", "name": "Marco Rossi"}], "Marco Rossi:999")
+    assert len(roster) == 1
+
+
+def test_roster_empty_when_nothing_configured():
+    assert build_roster([], "") == []
+
+
+def test_roster_line_is_prompt_ready():
+    assert roster_line(build_roster([], RAW_ALIASES)) == "Dana, Priya"
+    assert roster_line([]) == ""

@@ -1,45 +1,50 @@
 {
   "transcript": "samples/transcript_messy_1.txt",
   "label": "messy 1 — reversed decision, ownerless item",
-  "status": "DRAFT — drafted by the assistant, needs product review (same open question as gt9-gt11 in the clean set)",
-  "note": "Ground truth for task extraction on a deliberately messy transcript. 'must' = a real task any competent PM would create. 'debatable' = reasonable to include or fold elsewhere; found = fine, missed = not penalized. Deliberate traps, intentionally NOT in this list: the release date reversal (Wed -> Fri -> Wed) must not produce a 'move release to Friday' task, and Priya's empty state is reported as already fine, so it is not work.",
+  "status": "VALIDATED by Natallia (17 Aug 2026) — labels below reflect her product judgement, not the assistant's draft",
+  "note": "Ground truth for task extraction on a deliberately messy transcript. 'must' = a real NEW task any competent PM would create. 'debatable' = reasonable to include or fold elsewhere; found = fine, missed = not penalized. Deliberate traps, intentionally NOT in this list: the release date reversal (Wed -> Fri -> Wed) must not produce a 'move release to Friday' task, and Priya's empty state is reported as already fine.",
+  "manager_notes": [
+    {
+      "item": "Ship the Wednesday release with payments cut out",
+      "verdict": "NOT a new task — this is a decision. The team split one release in two: part ships Wednesday, payments follow later with no date agreed. Expected effect: a comment on the existing release task, plus a line in the daily summary doc.",
+      "expected_effect": "comment on existing task"
+    },
+    {
+      "item": "Finish regression testing on the payments flow (Sam)",
+      "verdict": "NOT a new task — 'I'm on regression until Wednesday' means the task already exists and is already assigned to him. Creating a second one is duplication. Expected effect: check the deadline on the board and, if it differs from what was said, leave a comment for the manager to decide — do not overwrite the date.",
+      "expected_effect": "verify deadline, comment if it differs"
+    }
+  ],
   "tasks": [
     {
       "id": "gt1",
       "summary": "Diagnose the search relevance/ranking problem with queries longer than three words, report back Thursday",
       "owner_hint": "Marco",
-      "must": true
-    },
-    {
-      "id": "gt2",
-      "summary": "Cut the Wednesday release with the payments piece excluded",
-      "owner_hint": "Dana",
-      "must": true
+      "must": true,
+      "manager_note": "Deadline was restated at the close of the meeting — check how it stands on the board."
     },
     {
       "id": "gt3",
       "summary": "Wire up the payment tokenization on our side (provider side is done; deferred out of this release)",
       "owner_hint": "Marco",
-      "must": true
-    },
-    {
-      "id": "gt4",
-      "summary": "Finish regression testing on the payments flow",
-      "owner_hint": "Sam",
-      "must": true
+      "must": true,
+      "manager_note": "Check whether this task already exists first. If not, create it and link it to the payments regression-flow task it blocks."
     },
     {
       "id": "gt5",
       "summary": "Investigate duplicated push notifications reported by ~6-7 users; needs an owner, to be looked at this week",
       "owner_hint": "unassigned",
-      "must": true
+      "must": true,
+      "destination": "backlog",
+      "manager_note": "Nobody was free on the call, so it goes to the backlog unassigned — the manager adds the owner later. Dana said 'this week', so set that as a deadline or record it as a comment so it isn't forgotten."
     },
     {
       "id": "gt6",
       "summary": "Onboarding illustrations, explicitly deferred to the next release",
       "owner_hint": "Priya",
       "must": false,
-      "why_debatable": "Explicitly pushed to the next release — a backlog note or a task are both defensible."
+      "why_debatable": "Check whether the task exists first. If it does, the right effect is a deadline (the next release date, from the release calendar) or a comment — not a new task.",
+      "expected_effect": "set deadline or comment if the task already exists"
     }
   ]
 }

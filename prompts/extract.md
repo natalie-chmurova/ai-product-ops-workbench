@@ -38,6 +38,11 @@ Rules:
 - Only include things actually grounded in the transcript. Do not invent items.
 - Prefer specific over vague ("Handle empty product images" not "Fix the app").
 - If an owner is named, use their first name. If not, use "Unassigned".
+- If a TEAM ROSTER is provided, owners must come from it — match the spoken name to a
+  roster name and use that spelling. If the person responsible is clearly not on the
+  roster (a guest, a client, an external vendor), keep their name as said rather than
+  forcing a roster match. Never assign work to a roster member who was not actually
+  made responsible for it.
 - Split compound items into separate entries.
 - Decisions get revised mid-conversation. Record only the FINAL position the team
   settled on, not the options they abandoned along the way. If that final decision
