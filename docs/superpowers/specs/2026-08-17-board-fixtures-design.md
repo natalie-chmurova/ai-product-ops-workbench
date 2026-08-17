@@ -1,7 +1,7 @@
 # Board fixtures and the effect eval — Design
 
 **Date:** 2026-08-17
-**Status:** Approved (design), pending implementation
+**Status:** Draft — awaiting review
 **Scope:** WB-19, and the measurement WB-9 / WB-17 / WB-18 depend on
 
 ## Problem
@@ -86,6 +86,12 @@ one field it does not yet read:
 date, or `""` when unset) so a fixture board and a live board are the same shape. Any
 code downstream can then be written once.
 
+`assignees` stays a list, because that is what ClickUp returns and what
+`get_tasks()` already produces. The `owner` the agent sees is that list joined with
+`", "`; when it is empty the field is omitted from the line entirely rather than
+rendered as `owner: none`. Stated here because it is otherwise the kind of detail that
+gets decided twice, differently, in two files.
+
 ### The live board stays the default
 
 The fixture is opt-in:
@@ -144,6 +150,34 @@ right task?). The first run will score **0% on `verify_deadline` and `verify_sta
 that is the point. A metric that is red before the fix and green after is what makes
 WB-9 and WB-18 provable rather than assertable.
 
+### `ask` is only correct when the agent escalated for the right reason
+
+`ask` is not a decision the agent makes — it is what happens when confidence falls
+below the gate, whatever the cause. Scored naively, it becomes the effect that flatters
+the metric: an item whose expected effect is `ask` would count as correct even when the
+agent escalated because its answer could not be parsed, or because it matched a task id
+that is not on the board. Both have been seen live — that is what the empty
+`"confidence 0.00 —"` reason was.
+
+So escalations are scored by cause, not just by outcome. `parse_decision` already
+distinguishes the cases in prose; it gains a machine-readable `escalation_cause`:
+
+| Cause | Meaning | Counts as a correct `ask` |
+|---|---|---|
+| `low_confidence` | the agent reached a decision and honestly doubted it | yes |
+| `unreadable` | the reply could not be parsed | **no** |
+| `phantom_target` | UPDATE naming a task id absent from the board | **no** |
+
+The last two are the guardrails firing — the mechanism failing safe. Counting them as
+a correct escalation would report a broken run as a good one.
+
+Additionally, for an item whose expected effect is `ask`, the report records what the
+agent was *about* to do (its underlying `decision` and `target_id`). An item that
+escalated while pointing at the wrong task is a different animal from one that
+escalated while pointing at the right one, and only the report can tell them apart.
+`evals/effect_results.md` therefore breaks escalations down by cause and lists the
+underlying intent for each, rather than collapsing them into one count.
+
 ### Drafted by the assistant, validated by the manager
 
 The fixtures are drafted from the transcripts — a task goes on the pre-meeting board
@@ -166,6 +200,9 @@ nothing.
 
 **`src/reconcile.py`**
 - `board_summary()` renders the richer line.
+- `parse_decision()` returns `escalation_cause` — `""` | `low_confidence` |
+  `unreadable` | `phantom_target`. The distinction already exists in the prose reasons
+  written for the human; this makes it available to the scorer as well.
 
 **`workbench.py`**
 - `--board <path>` selects the fixture; absent, `get_tasks()` runs as today.
@@ -196,6 +233,9 @@ nothing.
 - `board_summary` renders the new fields and omits empty ones.
 - Effect scoring — exact match, per-effect breakdown, target accuracy — against
   hand-built decision dicts.
+- `escalation_cause` — an unparseable reply yields `unreadable`, an UPDATE naming an
+  absent id yields `phantom_target`, an honest low score yields `low_confidence` — and
+  the scorer credits a correct `ask` only for the last.
 
 **Live runs (required, not optional):** every fixture is run through
 `workbench.py --board …` and the resulting `board_plan.md` is read. WB-11 shipped a bug
@@ -204,9 +244,18 @@ returned `what` while the plan read `name`, so every heading rendered blank. A u
 on invented data does not replace a run on real data.
 
 **The measurement that justifies the work:**
-- `demo` against its clean fixture vs. against the live cluttered board — same
-  transcript, same prompt, one variable. The difference in how many items escalate is
-  the cost of board clutter, measured rather than asserted.
+- `demo` against its clean fixture vs. against the cluttered board — same transcript,
+  same prompt, one variable. The difference in how many items escalate is the cost of
+  board clutter, measured rather than asserted.
+
+  The cluttered side is **a snapshot, not the live board**:
+  `evals/board_demo_live_snapshot.json`, captured from ClickUp at measurement time and
+  carrying the capture date. The live board is not a stable comparison surface — it has
+  11 tasks today because of accumulated test runs, and it will have a different set
+  after any cleanup. Comparing a fixture against a moving board yields a number nobody
+  can reproduce next month; comparing two committed files yields one anybody can. The
+  snapshot is committed precisely *because* it contains the duplicates — they are the
+  independent variable, not noise to be tidied away.
 - `messy_1` / `messy_2` against their fixtures — `comment` and the two `verify_*`
   effects become numbers for the first time.
 - `eval_decisions` re-measured on the real `prompts/match.md`.
@@ -227,12 +276,13 @@ on invented data does not replace a run on real data.
 **New:**
 - `evals/eval_effects.py`
 - `evals/board_demo.json`, `evals/board_messy_1.json`, `evals/board_messy_2.json`
+- `evals/board_demo_live_snapshot.json` — the cluttered board as captured, with its date
 - `evals/effect_results.md` (generated)
 - `tests/test_board_fixtures.py`
 
 **Changed:**
 - `src/clickup.py` — `due_date`, `load_board_fixture`
-- `src/reconcile.py` — richer `board_summary`
+- `src/reconcile.py` — richer `board_summary`, `escalation_cause`
 - `workbench.py` — `--board`
 - `evals/eval_decisions.py` — read `prompts/match.md`
 - `evals/ground_truth*.json` — a `"board"` reference, and `expected_effect` on tasks
