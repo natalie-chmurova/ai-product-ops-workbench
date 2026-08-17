@@ -18,6 +18,7 @@ Usage:
   python evals/run_eval.py [runs]        run every transcript (default 3 runs each)
   python evals/run_eval.py 2 --only messy    only sets whose filename matches "messy"
   python evals/run_eval.py --dry-run     list what would run, call no API, spend nothing
+  python evals/run_eval.py --roster      resolve owners against the team roster (WB-13)
 Writes: evals/results.md
 """
 
@@ -38,6 +39,7 @@ load_dotenv(dotenv_path=ROOT / ".env")
 
 from src.artifacts import build_tasks            # noqa: E402
 from src.client import ask                        # noqa: E402
+from src.assignees import roster_line, team_roster  # noqa: E402
 from src.extract import extract_context           # noqa: E402
 
 JUDGE_PROMPT = """You are a strict evaluation judge. Compare a list of EXTRACTED tasks
@@ -87,8 +89,8 @@ def load_sets(only: str | None = None) -> list[dict]:
     return sets
 
 
-def run_pipeline(transcript: str) -> list[dict]:
-    context = extract_context(transcript)
+def run_pipeline(transcript: str, roster: list | None = None) -> list[dict]:
+    context = extract_context(transcript, roster)
     return build_tasks(context)
 
 
@@ -115,11 +117,11 @@ def judge(gt: dict, tasks: list[dict]) -> tuple[dict, dict]:
     return gt_status, ext_status
 
 
-def eval_set(s: dict, runs: int) -> list[dict]:
+def eval_set(s: dict, runs: int, roster: list | None = None) -> list[dict]:
     rows = []
     for r in range(1, runs + 1):
         print(f"  run {r}/{runs}: extracting...", flush=True)
-        tasks = run_pipeline(s["transcript"])
+        tasks = run_pipeline(s["transcript"], roster)
         gt_status, ext_status = judge(s["gt"], tasks)
         matched_must = sum(1 for i in s["must_ids"] if gt_status.get(i))
         recall = matched_must / len(s["must_ids"]) if s["must_ids"] else 1.0
@@ -139,18 +141,24 @@ def eval_set(s: dict, runs: int) -> list[dict]:
 def main() -> None:
     args = sys.argv[1:]
     dry_run = "--dry-run" in args
+    use_roster = "--roster" in args
     only = None
     for a in args:
         if a.startswith("--only"):
             only = a.split("=", 1)[1] if "=" in a else args[args.index(a) + 1]
     runs = next((int(a) for a in args if a.isdigit()), 3)
 
+    # Off by default so the numbers stay comparable with earlier runs; pass
+    # --roster to measure what the closed team list actually buys.
+    roster = team_roster() if use_roster else None
+
     sets = load_sets(only)
     if not sets:
         raise SystemExit("no ground_truth*.json found")
 
     if dry_run:
-        print(f"DRY RUN — no API calls, nothing spent. {runs} run(s) each:\n")
+        print(f"DRY RUN — no API calls, nothing spent. {runs} run(s) each.")
+        print(f"roster: {roster_line(roster) if roster else '(off — pass --roster to enable)'}\n")
         for s in sets:
             gt = s["gt"]
             debatable = len(gt["tasks"]) - len(s["must_ids"])
@@ -168,7 +176,7 @@ def main() -> None:
     results = []
     for s in sets:
         print(f"\n=== {s['label']} ({s['transcript_path']}) ===")
-        rows = eval_set(s, runs)
+        rows = eval_set(s, runs, roster)
         avg_r = sum(x["recall"] for x in rows) / len(rows)
         avg_p = sum(x["precision"] for x in rows) / len(rows)
         print(f"  AVG: recall={avg_r:.0%}  precision={avg_p:.0%}")
@@ -178,7 +186,9 @@ def main() -> None:
         f"# Extraction eval — {date.today().isoformat()}",
         "",
         "Pipeline: `extract_context` → `build_tasks` · judge: LLM-as-judge (Claude) · "
-        f"{runs} runs per transcript.",
+        f"{runs} runs per transcript"
+        + (f" · team roster: {roster_line(roster)}" if roster else " · no team roster")
+        + ".",
         "",
         "Recall is measured over MUST items only; debatable items never penalize recall "
         "but do protect precision. The messy transcripts exist so the benchmark can fail: "

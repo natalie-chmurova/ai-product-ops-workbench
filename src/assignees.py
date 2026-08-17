@@ -64,6 +64,55 @@ def alias_map() -> dict[str, str]:
     return out
 
 
+def build_roster(members: list[dict], raw_aliases: str) -> list[dict]:
+    """The closed list of people this pipeline is allowed to recognise.
+
+    Workspace members from the tracker, plus the configured aliases (teams have
+    nicknames, and in the demo the synthetic cast maps onto one real account).
+    Names keep their original spelling because they go into the prompt for the
+    model to match against — a closed list is what stops it inventing people.
+
+    Pure function: takes members and the raw OWNER_ALIASES string, hits nothing.
+    """
+    roster: list[dict] = []
+    seen: set = set()
+
+    def add(name: str, uid: str) -> None:
+        name = (name or "").strip()
+        key = normalize(name)
+        if not name or key in seen:
+            return
+        seen.add(key)
+        roster.append({"name": name, "id": str(uid)})
+
+    for m in members:
+        add(m.get("name", ""), m.get("id", ""))
+    for pair in (raw_aliases or "").split(","):
+        if ":" in pair:
+            alias_name, uid = pair.split(":", 1)
+            add(alias_name, uid.strip())
+    return roster
+
+
+def roster_line(roster: list[dict]) -> str:
+    """Roster as a single line for a prompt: 'Dana, Marco, Priya'."""
+    return ", ".join(r["name"] for r in roster)
+
+
+def team_roster() -> list[dict]:
+    """The live roster: tracker members plus configured aliases.
+
+    Never raises. With no ClickUp credentials configured you still get the
+    aliases; with nothing configured at all you get an empty roster, and the
+    prompts simply fall back to reading names out of the transcript.
+    """
+    try:
+        members = get_members()
+    except (WorkbenchError, requests.RequestException):
+        members = []
+    return build_roster(members, os.environ.get("OWNER_ALIASES", ""))
+
+
 def resolve_owner(name: str | None, members: list[dict], aliases: dict[str, str]) -> str | None:
     """Name -> ClickUp user id, or None if it can't be resolved."""
     n = normalize(name)

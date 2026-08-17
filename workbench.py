@@ -29,6 +29,7 @@ from src.artifacts import (
     build_sprint_summary,
     build_tasks,
 )
+from src.assignees import roster_line, team_roster
 from src.client import WorkbenchError
 from src.extract import extract_context
 from src.render import render_report
@@ -63,15 +64,19 @@ def run(transcript_path: Path) -> None:
         transcript = transcript_path.read_text(encoding="utf-8")
     OUTPUT_DIR.mkdir(exist_ok=True)
 
+    roster = team_roster()
+    if roster:
+        print(f"Team roster ({len(roster)}): {roster_line(roster)}")
+
     print("Stage 1/3  Understanding the transcript...")
-    context = extract_context(transcript)
+    context = extract_context(transcript, roster)
     _write(OUTPUT_DIR / "context.json", json.dumps(context, ensure_ascii=False, indent=2))
 
     print("Stage 2/3  Building artifacts (tasks, sprint summary, bug triage, per-speaker)...")
     tasks = build_tasks(context)
     sprint_md = build_sprint_summary(context)
     triage_md = build_bug_triage(context)
-    speakers_md = build_speaker_summary(context, transcript)
+    speakers_md = build_speaker_summary(context, transcript, roster)
     _write(OUTPUT_DIR / "tasks.json", json.dumps(tasks, ensure_ascii=False, indent=2))
     _write(OUTPUT_DIR / "sprint_summary.md", sprint_md)
     _write(OUTPUT_DIR / "bug_triage.md", triage_md)

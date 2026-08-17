@@ -23,6 +23,7 @@ from src.artifacts import (
     build_sprint_summary,
     build_tasks,
 )
+from src.assignees import roster_line, team_roster
 from src.clickup import get_lists, push_tasks
 from src.client import WorkbenchError
 from src.extract import extract_context
@@ -256,13 +257,16 @@ with right:
     if run:
         try:
             with st.status("Working through the transcript...", expanded=True) as status:
+                roster = team_roster()
+                if roster:
+                    st.write(f"Team roster ({len(roster)}): {roster_line(roster)}")
                 st.write("Stage 1/3 — understanding the transcript")
-                context = extract_context(transcript)
+                context = extract_context(transcript, roster)
                 st.write("Stage 2/3 — building tasks, sprint summary, bug triage, per-speaker notes")
                 tasks = build_tasks(context)
                 sprint_md = build_sprint_summary(context)
                 triage_md = build_bug_triage(context)
-                speakers_md = build_speaker_summary(context, transcript)
+                speakers_md = build_speaker_summary(context, transcript, roster)
                 st.write("Stage 3/3 — done")
                 status.update(label="Done ✓", state="complete", expanded=False)
             st.session_state["result"] = {

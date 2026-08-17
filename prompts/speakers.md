@@ -28,3 +28,8 @@ Rules:
   final version and mention that it changed.
 - Use the person's first name exactly as it appears in the transcript.
 - Keep it terse. This is a working note, not a narrative.
+- If a TEAM ROSTER is provided, it is the list of real people on this team. Match each
+  speaker to a roster name and use that spelling, so the same person is never split
+  across two variants. Someone who speaks but is not on the roster is a guest — keep
+  their section and mark them "(not on the team roster)". Never invent a roster name
+  for someone who did not speak.
