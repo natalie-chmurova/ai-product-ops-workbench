@@ -219,8 +219,10 @@ nothing.
 - Writes `evals/effect_results.md`, per transcript, in the style of `results.md`.
 - `--dry-run` and `--only` flags, matching `run_eval.py`.
 
-**`evals/eval_decisions.py`**
-- Drops `MATCH_PROMPT` and loads `prompts/match.md`, closing the drift.
+**`evals/eval_decisions.py`** — re-measured here, but **not modified here**. The richer
+`board_summary` moves its numbers on its own; closing the prompt drift would move them
+a second time, and a single re-measurement could not say which change did what. The
+drift fix is WB-21, measured separately. One change per measurement.
 
 **New data:** `evals/board_demo.json`, `evals/board_messy_1.json`,
 `evals/board_messy_2.json`.
@@ -258,7 +260,8 @@ on invented data does not replace a run on real data.
   independent variable, not noise to be tidied away.
 - `messy_1` / `messy_2` against their fixtures — `comment` and the two `verify_*`
   effects become numbers for the first time.
-- `eval_decisions` re-measured on the real `prompts/match.md`.
+- `eval_decisions` re-measured because `board_summary` changed under it — its code
+  untouched, so the delta is attributable to that one change.
 
 ## Honest boundaries
 
@@ -284,13 +287,15 @@ on invented data does not replace a run on real data.
 - `src/clickup.py` — `due_date`, `load_board_fixture`
 - `src/reconcile.py` — richer `board_summary`, `escalation_cause`
 - `workbench.py` — `--board`
-- `evals/eval_decisions.py` — read `prompts/match.md`
 - `evals/ground_truth*.json` — a `"board"` reference, and `expected_effect` on tasks
   and manager notes
 - `evals/results.md`, `evals/decision_results.md` — re-measured numbers
 
 ## Out of scope, noted for later
 
+- Closing the `eval_decisions.py` prompt drift (WB-21) — a real defect with a real
+  consequence for published numbers, but held separate so each re-measurement isolates
+  one change.
 - Implementing `verify_deadline` (WB-9) and `verify_status` (WB-18).
 - Dependency links between tasks (WB-17) — the fixture format can carry them when that
   work starts; nothing here blocks it.
