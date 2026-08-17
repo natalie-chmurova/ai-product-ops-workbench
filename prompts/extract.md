@@ -9,7 +9,11 @@ no markdown fences) with exactly this shape:
 {
   "meeting_title": "short title of the meeting",
   "decisions": [
-    "each concrete decision the team made, one clear sentence"
+    {
+      "what": "the decision the team reached, one clear sentence",
+      "affects": "the existing work this decision changes, named as the team would say it, or 'nothing specific'",
+      "kind": "scope_change, date_change, priority_change, or other"
+    }
   ],
   "action_items": [
     {
@@ -47,9 +51,14 @@ Rules:
   made responsible for it.
 - Split compound items into separate entries.
 - Decisions get revised mid-conversation. Record only the FINAL position the team
-  settled on, not the options they abandoned along the way. If that final decision
-  implies work ("ship Wednesday but cut payments out"), also record that work as an
-  action item.
+  settled on, not the options they abandoned along the way.
+- A decision is not an action item. "Ship Wednesday but cut payments out" changes
+  work that already exists — it belongs in `decisions` with `affects` naming that
+  work, and must NOT be repeated as an action item. Only record an action item when
+  the decision creates genuinely new work nobody was doing before.
+- Do not restate an action item as a decision either. "Marco will fix the tokenizer
+  today" is an action item, not a decision — `decisions` is for what the team
+  changed its mind about, not a summary of who does what.
 - Work mentioned in passing still counts. A throwaway line ("ours isn't wired up",
   "nobody picked that up", "that needs fixing") is an action item when the work is
   real and unfinished — even if nobody was assigned and the conversation moved on.

@@ -2,9 +2,11 @@
 
 from src.reconcile import (
     board_summary,
+    decisions_markdown,
     parse_decision,
     plan_markdown,
     reconcile,
+    reconcile_decisions,
     split_by_confidence,
 )
 
@@ -101,6 +103,28 @@ def test_reconcile_normalises_stage1_field_names():
     assert out[0]["name"] == "Diagnose search ranking"
     assert out[0]["detail"] == "over 3 words"
     assert out[0]["decision"] == "NEW"
+
+
+def test_decisions_never_become_new_work():
+    # a decision changes existing work; "create a task" is not a valid outcome
+    out = reconcile_decisions([{"what": "Ship Wednesday, cut payments", "affects": "the release"}], [])
+    assert out[0]["effect"] == "ask"          # no board -> a human looks at it
+    assert "create" not in str(out).lower() or out[0]["effect"] != "create"
+
+
+def test_decisions_markdown_shows_target_and_kind():
+    decided = [{"name": "Ship Wednesday, cut payments", "affects": "release", "kind": "scope_change",
+                "effect": "comment", "target_id": "86abc", "confidence": 0.9, "reason": "same release"}]
+    md = decisions_markdown(decided, BOARD, threshold=0.8)
+    assert "scope_change" in md
+    assert "[Payments] Fix saved cards" in md
+
+
+def test_low_confidence_decision_goes_to_a_human():
+    decided = [{"name": "Something vague", "affects": "?", "kind": "other",
+                "effect": "comment", "target_id": "86abc", "confidence": 0.3, "reason": "unsure"}]
+    md = decisions_markdown(decided, BOARD, threshold=0.8)
+    assert "ask a human" in md
 
 
 def test_reconcile_on_empty_board_makes_no_decision_call():

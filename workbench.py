@@ -32,7 +32,13 @@ from src.artifacts import (
 from src.assignees import roster_line, team_roster
 from src.client import WorkbenchError
 from src.clickup import get_tasks
-from src.reconcile import plan_markdown, reconcile, split_by_confidence
+from src.reconcile import (
+    decisions_markdown,
+    plan_markdown,
+    reconcile,
+    reconcile_decisions,
+    split_by_confidence,
+)
 from src.extract import extract_context
 from src.render import render_report
 from src.transcribe import is_audio, transcribe_audio
@@ -89,8 +95,11 @@ def run(transcript_path: Path) -> None:
         print(f"Stage 2.5/3  Reconciling against the board ({len(board)} open tasks)...")
         decisions = reconcile(context.get("action_items", []), board)
         create, comment, ask = split_by_confidence(decisions)
-        _write(OUTPUT_DIR / "board_plan.md", plan_markdown(decisions, board))
+        decided = reconcile_decisions(context.get("decisions", []), board)
+        plan = plan_markdown(decisions, board) + "\n" + decisions_markdown(decided, board)
+        _write(OUTPUT_DIR / "board_plan.md", plan)
         print(f"  create {len(create)} · comment on existing {len(comment)} · ask a human {len(ask)}")
+        print(f"  decisions: {len(decided)} (comment on existing work, never new tasks)")
     else:
         print("Stage 2.5/3  No board configured — every point counts as new.")
 
