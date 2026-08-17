@@ -49,8 +49,19 @@ def parse_decision(reply: str, board: list[dict]) -> dict:
     if decision == "UPDATE" and not target:
         confidence = 0.0
 
-    if not re.search(r"DECISION:\s*(NEW|UPDATE)", reply, re.I):
+    unparseable = not re.search(r"DECISION:\s*(NEW|UPDATE)", reply, re.I)
+    if unparseable:
         confidence = 0.0
+
+    # Escalating without saying why wastes the human's time — they see a question
+    # and no reason for it. Always hand over something readable.
+    if not reason:
+        if unparseable:
+            reason = "could not read the agent's answer, so this needs a human"
+        elif decision == "UPDATE" and not target:
+            reason = "matched an existing task that is not on the board"
+        else:
+            reason = "the agent gave no reason"
 
     return {
         "decision": decision,
@@ -58,6 +69,70 @@ def parse_decision(reply: str, board: list[dict]) -> dict:
         "confidence": confidence,
         "reason": reason,
     }
+
+
+def reconcile_decisions(decisions: list[dict], board: list[dict]) -> list[dict]:
+    """Match each decision to the work it changes.
+
+    A decision is never new work — "ship Wednesday, cut payments" changes an
+    existing commitment. So the only useful outcomes are: comment on the task it
+    affects, or ask a human because no task on the board obviously matches.
+    Creating something is not on the menu.
+    """
+    out = []
+    for d in decisions:
+        what = d.get("what") if isinstance(d, dict) else str(d)
+        affects = d.get("affects", "") if isinstance(d, dict) else ""
+        kind = d.get("kind", "other") if isinstance(d, dict) else "other"
+
+        if board:
+            decision = decide_one(what, f"This decision changes: {affects}", board)
+        else:
+            decision = {"decision": "NEW", "target_id": "", "confidence": 0.0,
+                        "reason": "no board to match the decision against"}
+
+        # NEW is meaningless for a decision: if nothing matched, a human looks at it.
+        effect = "comment" if decision["target_id"] else "ask"
+        out.append({
+            "name": what,
+            "affects": affects,
+            "kind": kind,
+            "effect": effect,
+            "target_id": decision["target_id"],
+            "confidence": decision["confidence"],
+            "reason": decision["reason"],
+        })
+    return out
+
+
+def decisions_markdown(decisions: list[dict], board: list[dict], threshold: float = 0.8) -> str:
+    """The decisions section of the board plan."""
+    names = {t["id"]: t.get("name", "") for t in board}
+    lines = [f"## Decisions ({len(decisions)})", ""]
+    if not decisions:
+        lines += ["- none", ""]
+        return "\n".join(lines)
+
+    for d in decisions:
+        target = names.get(d.get("target_id", ""), "")
+        if d["effect"] == "comment" and d.get("confidence", 0) >= threshold:
+            lines.append(
+                f"- **{d['name']}** `{d.get('kind','other')}` → comment on `{target}` — {d.get('reason','')}"
+            )
+        else:
+            lines.append(
+                f"- **{d['name']}** `{d.get('kind','other')}` → ask a human "
+                f"(confidence {d.get('confidence',0):.2f}) — {d.get('reason','')}"
+            )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _kind(d: dict) -> str:
+    """`bug → backlog` as a short tag for the plan, empty when unclassified."""
+    bits = [str(d.get(k, "")).lower() for k in ("type", "destination")]
+    bits = [b for b in bits if b]
+    return f"`{' → '.join(bits)}` " if bits else ""
 
 
 def split_by_confidence(decisions: list[dict], threshold: float = 0.8) -> tuple:
@@ -90,7 +165,7 @@ def plan_markdown(decisions: list[dict], board: list[dict], threshold: float = 0
 
     lines += [f"## Create ({len(create)})", ""]
     for d in create:
-        lines.append(f"- **{d.get('name','')}** — {d.get('reason','')}")
+        lines.append(f"- **{d.get('name','')}** {_kind(d)}— {d.get('reason','')}")
     if not create:
         lines.append("- nothing")
 
