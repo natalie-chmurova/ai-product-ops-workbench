@@ -49,8 +49,19 @@ def parse_decision(reply: str, board: list[dict]) -> dict:
     if decision == "UPDATE" and not target:
         confidence = 0.0
 
-    if not re.search(r"DECISION:\s*(NEW|UPDATE)", reply, re.I):
+    unparseable = not re.search(r"DECISION:\s*(NEW|UPDATE)", reply, re.I)
+    if unparseable:
         confidence = 0.0
+
+    # Escalating without saying why wastes the human's time — they see a question
+    # and no reason for it. Always hand over something readable.
+    if not reason:
+        if unparseable:
+            reason = "could not read the agent's answer, so this needs a human"
+        elif decision == "UPDATE" and not target:
+            reason = "matched an existing task that is not on the board"
+        else:
+            reason = "the agent gave no reason"
 
     return {
         "decision": decision,

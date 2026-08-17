@@ -60,6 +60,18 @@ def test_garbage_reply_defaults_to_new_and_zero_confidence():
     assert d["confidence"] == 0.0
 
 
+def test_escalation_always_carries_a_reason():
+    # a human seeing "confidence 0.00 —" with no explanation cannot act on it
+    d = parse_decision("the model rambled instead of answering", BOARD)
+    assert d["reason"], "an escalated item must say why it was escalated"
+    assert "could not read" in d["reason"]
+
+
+def test_off_board_update_explains_itself():
+    d = parse_decision("DECISION: UPDATE\nTASK_ID: 86zzz\nCONFIDENCE: 0.9\nREASON:", BOARD)
+    assert "not on the board" in d["reason"]
+
+
 # --- turning decisions into a plan of board effects ---
 
 DECISIONS = [
