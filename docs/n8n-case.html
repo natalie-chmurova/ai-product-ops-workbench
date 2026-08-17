@@ -186,18 +186,27 @@
   throwaway line ("ours isn't wired up"). So I added three rules to the extraction prompt — keep only
   the final position after a reversal, treat a throwaway line as real work, and never turn
   already-finished work into a task — and measured again:</p>
+  <p>Then the labels themselves got audited. The first ground truth was drafted by the assistant —
+  which means "100%" only ever proved the AI agreed with itself. So a delivery manager went through
+  every item and re-decided what counts as real work. That changed the answer key substantially:
+  a release decision reached mid-argument is <i>not</i> a new task, it is a comment on the existing
+  release task; work someone is already assigned ("I'm on regression until Wednesday") is not a new
+  task either. Scored against the human-validated labels:</p>
   <table>
     <tr><th>transcript</th><th>recall</th><th>precision</th></tr>
-    <tr><td>clean</td><td>100% → 100%</td><td>100% → 97%</td></tr>
-    <tr><td>messy — reversed decision, ownerless item</td><td>67% → 73%</td><td>83% → 100%</td></tr>
-    <tr><td>messy — noise, task raised in passing</td><td>100% → 100%</td><td>94% → 100%</td></tr>
+    <tr><td>clean</td><td>100%</td><td>100%</td></tr>
+    <tr><td>messy — reversed decision, ownerless item</td><td>100%</td><td>70%</td></tr>
+    <tr><td>messy — noise, task raised in passing</td><td>100%</td><td>100%</td></tr>
   </table>
-  <p><b>The honest read: the fix solved the noise problem, not the recall problem.</b> Precision went
-  to 100% on both messy transcripts — the "already done isn't a task" rule did its job. Recall moved
-  67% → 73%, which is inside run-to-run noise, and the miss simply relocated: the pipeline now
-  catches the tokenization line it used to drop, but starts dropping the regression-testing item
-  instead. Extraction still collapses to 3–4 items on a messy transcript where the ground truth has
-  five. That is a real, still-open weakness, and I would rather name it than round it up.</p>
+  <p><b>Precision is now the interesting number, and it is failing for a nameable reason:</b> the
+  pipeline emits four or five tasks where only three are genuinely new. The extras are exactly the
+  items the manager reclassified — it files a decision as work, and re-creates a task that already
+  exists on the board. Which is not a prompt bug: this pipeline never reads the board, so it has no
+  way to know. The n8n workflow does read it, and that split — a board-aware agent next to a
+  board-blind pipeline — is the real finding.</p>
+  <p class="foot" style="margin-top:-6px">Note on comparability: earlier runs scored 67–73% recall
+  against the assistant's draft labels. Those numbers are not comparable to the ones above — the
+  system did not change, the definition of a correct answer did.</p>
   <p><b>Agent decisions</b> — the harder, more interesting one. A labeled board plus meeting points
   with deliberate traps (same work phrased differently; new work that sounds like an existing task),
   scoring the agent's <b>new-vs-update</b> call by exact match. The first run scored 90% decision /
