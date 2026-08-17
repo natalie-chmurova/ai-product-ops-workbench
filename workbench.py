@@ -10,6 +10,7 @@ Outputs (written to ./outputs/):
     tasks.json           ClickUp-ready tasks
     sprint_summary.md    stakeholder sprint summary
     bug_triage.md        bug triage table
+    speaker_summary.md   per-person breakdown (status, commitments, blockers)
     report.html          a single page showing input -> output
 """
 
@@ -22,7 +23,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from src.artifacts import build_bug_triage, build_sprint_summary, build_tasks
+from src.artifacts import (
+    build_bug_triage,
+    build_speaker_summary,
+    build_sprint_summary,
+    build_tasks,
+)
 from src.client import WorkbenchError
 from src.extract import extract_context
 from src.render import render_report
@@ -61,16 +67,18 @@ def run(transcript_path: Path) -> None:
     context = extract_context(transcript)
     _write(OUTPUT_DIR / "context.json", json.dumps(context, ensure_ascii=False, indent=2))
 
-    print("Stage 2/3  Building artifacts (tasks, sprint summary, bug triage)...")
+    print("Stage 2/3  Building artifacts (tasks, sprint summary, bug triage, per-speaker)...")
     tasks = build_tasks(context)
     sprint_md = build_sprint_summary(context)
     triage_md = build_bug_triage(context)
+    speakers_md = build_speaker_summary(context, transcript)
     _write(OUTPUT_DIR / "tasks.json", json.dumps(tasks, ensure_ascii=False, indent=2))
     _write(OUTPUT_DIR / "sprint_summary.md", sprint_md)
     _write(OUTPUT_DIR / "bug_triage.md", triage_md)
+    _write(OUTPUT_DIR / "speaker_summary.md", speakers_md)
 
     print("Stage 3/3  Rendering the report page...")
-    report_html = render_report(transcript, tasks, sprint_md, triage_md)
+    report_html = render_report(transcript, tasks, sprint_md, triage_md, speakers_md)
     _write(OUTPUT_DIR / "report.html", report_html)
 
     print(f"\nDone. {len(tasks)} tasks generated.")

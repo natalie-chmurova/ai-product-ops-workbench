@@ -44,3 +44,19 @@ def build_bug_triage(context: dict) -> str:
     system_prompt = load_prompt("bug_triage")
     user_content = f"Here is the structured meeting summary:\n\n{_summary_as_text(context)}"
     return ask(system_prompt, user_content, max_tokens=2000).strip()
+
+
+def build_speaker_summary(context: dict, transcript: str) -> str:
+    """Per-person breakdown: status, commitments, blockers, follow-ups.
+
+    This one also gets the raw transcript, because who said what is the whole
+    point and stage 1 only keeps an `owner` per action item. Passing the
+    transcript here (instead of widening the stage-1 contract) keeps the
+    extraction eval measuring the same thing it measured before.
+    """
+    system_prompt = load_prompt("speakers")
+    user_content = (
+        f"Here is the structured meeting summary:\n\n{_summary_as_text(context)}"
+        f"\n\nHere is the transcript:\n\n{transcript}"
+    )
+    return ask(system_prompt, user_content, max_tokens=2500).strip()
