@@ -151,20 +151,40 @@ def push_tasks(tasks: list, list_id: str | None = None) -> dict:
         members = []
     aliases = alias_map()
 
-    created, assigned, failures = 0, 0, []
+    # A newly found defect belongs in the backlog, not in the running sprint.
+    # If no backlog list is configured, everything still lands in the main list —
+    # but the intended destination is tagged, so nothing is silently lost.
+    backlog_id = os.environ.get("CLICKUP_BACKLOG_LIST_ID")
+
+    created, assigned, to_backlog, failures = 0, 0, 0, []
     for task in tasks:
         assignee_id = resolve_owner(task.get("owner"), members, aliases)
-        ok, info = _create_task(list_id, task, assignee_id)
+        wants_backlog = str(task.get("destination", "")).lower() == "backlog"
+        target = backlog_id if (wants_backlog and backlog_id) else list_id
+
+        task = dict(task)
+        tags = [t for t in task.get("tags", []) if t]
+        for marker in (task.get("type"), task.get("destination")):
+            marker = str(marker or "").lower()
+            if marker in ("bug", "backlog") and marker not in tags:
+                tags.append(marker)
+        task["tags"] = tags
+
+        ok, info = _create_task(target, task, assignee_id)
         if ok:
             created += 1
             if assignee_id:
                 assigned += 1
+            if wants_backlog:
+                to_backlog += 1
         else:
             failures.append(info)
 
     return {
         "created": created,
         "assigned": assigned,
+        "backlog": to_backlog,
+        "backlog_list_configured": bool(backlog_id),
         "failed": failures,
         "total": len(tasks),
         "list_url": list_url(list_id),

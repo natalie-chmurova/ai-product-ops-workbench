@@ -60,6 +60,13 @@ def parse_decision(reply: str, board: list[dict]) -> dict:
     }
 
 
+def _kind(d: dict) -> str:
+    """`bug → backlog` as a short tag for the plan, empty when unclassified."""
+    bits = [str(d.get(k, "")).lower() for k in ("type", "destination")]
+    bits = [b for b in bits if b]
+    return f"`{' → '.join(bits)}` " if bits else ""
+
+
 def split_by_confidence(decisions: list[dict], threshold: float = 0.8) -> tuple:
     """Route decisions into (create, comment, ask_a_human).
 
@@ -90,7 +97,7 @@ def plan_markdown(decisions: list[dict], board: list[dict], threshold: float = 0
 
     lines += [f"## Create ({len(create)})", ""]
     for d in create:
-        lines.append(f"- **{d.get('name','')}** — {d.get('reason','')}")
+        lines.append(f"- **{d.get('name','')}** {_kind(d)}— {d.get('reason','')}")
     if not create:
         lines.append("- nothing")
 

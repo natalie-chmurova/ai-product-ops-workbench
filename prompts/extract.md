@@ -15,7 +15,9 @@ no markdown fences) with exactly this shape:
     {
       "what": "the thing that needs to be done, imperative and specific",
       "owner": "person named as responsible, or 'Unassigned' if none",
-      "context": "1-2 sentences of why / background from the meeting"
+      "context": "1-2 sentences of why / background from the meeting",
+      "type": "task or bug",
+      "destination": "sprint or backlog"
     }
   ],
   "bugs": [
@@ -55,4 +57,17 @@ Rules:
 - Do not turn already-finished work into action items. If something is reported as
   done or resolved ("that one's fine now", "it resolved itself"), it belongs in
   sprint_signals, not action_items.
+- Set `type` and `destination` on every action item, the way a delivery manager
+  would sort it:
+  - a defect in existing behaviour is a "bug"; everything else is a "task"
+  - a newly discovered defect goes to the "backlog", not into the running sprint —
+    the manager decides later whether it earns a slot
+  - a hedged follow-up ("maybe", "if it happens again", "we should probably") goes
+    to the "backlog" too; it is real enough to record and not urgent enough to
+    interrupt the sprint
+  - an item nobody took goes to the "backlog"
+  - work someone committed to on this call, with a time attached, goes to "sprint"
+  - but work deferred beyond the current sprint goes to the "backlog" even when
+    someone took it — "after the release", "next sprint", "once this ships" means
+    it is not sprint work, whoever owns it
 - Return valid JSON and nothing else.
