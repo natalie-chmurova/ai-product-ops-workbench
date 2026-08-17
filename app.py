@@ -17,7 +17,12 @@ from pathlib import Path
 import streamlit as st
 from dotenv import load_dotenv
 
-from src.artifacts import build_bug_triage, build_sprint_summary, build_tasks
+from src.artifacts import (
+    build_bug_triage,
+    build_speaker_summary,
+    build_sprint_summary,
+    build_tasks,
+)
 from src.clickup import get_lists, push_tasks
 from src.client import WorkbenchError
 from src.extract import extract_context
@@ -253,14 +258,16 @@ with right:
             with st.status("Working through the transcript...", expanded=True) as status:
                 st.write("Stage 1/3 — understanding the transcript")
                 context = extract_context(transcript)
-                st.write("Stage 2/3 — building tasks, sprint summary, bug triage")
+                st.write("Stage 2/3 — building tasks, sprint summary, bug triage, per-speaker notes")
                 tasks = build_tasks(context)
                 sprint_md = build_sprint_summary(context)
                 triage_md = build_bug_triage(context)
+                speakers_md = build_speaker_summary(context, transcript)
                 st.write("Stage 3/3 — done")
                 status.update(label="Done ✓", state="complete", expanded=False)
             st.session_state["result"] = {
                 "context": context, "tasks": tasks, "sprint": sprint_md, "triage": triage_md,
+                "speakers": speakers_md,
             }
         except (WorkbenchError, ValueError) as exc:
             st.session_state["result"] = None
@@ -272,8 +279,8 @@ with right:
     else:
         render_metrics(result["context"], result["tasks"])
         render_clickup(result["tasks"])
-        tab_tasks, tab_sprint, tab_triage = st.tabs(
-            ["Tasks", "Sprint Summary", "Bug Triage"]
+        tab_tasks, tab_sprint, tab_triage, tab_speakers = st.tabs(
+            ["Tasks", "Sprint Summary", "Bug Triage", "By Speaker"]
         )
         with tab_tasks:
             render_tasks(result["tasks"])
@@ -281,3 +288,6 @@ with right:
             st.markdown(result["sprint"])
         with tab_triage:
             st.markdown(result["triage"])
+        with tab_speakers:
+            # older results in session_state predate this tab
+            st.markdown(result.get("speakers") or "_Re-run to generate the per-speaker view._")

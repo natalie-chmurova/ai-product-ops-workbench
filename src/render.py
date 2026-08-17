@@ -56,12 +56,14 @@ def render_report(
     tasks: list,
     sprint_md: str,
     bug_triage_md: str,
+    speakers_md: str = "",
 ) -> str:
     """Return a complete HTML document as a string."""
     transcript_html = html.escape(transcript).replace("\n", "<br>")
     tasks_html = "".join(_render_task_card(t) for t in tasks) or "<p>No tasks generated.</p>"
     sprint_html = _md_to_html(sprint_md)
     triage_html = _md_to_html(bug_triage_md)
+    speakers_html = _md_to_html(speakers_md) if speakers_md else "<p>Not generated.</p>"
     today = date.today().isoformat()
 
     return _TEMPLATE.format(
@@ -71,6 +73,7 @@ def render_report(
         tasks_html=tasks_html,
         sprint_html=sprint_html,
         triage_html=triage_html,
+        speakers_html=speakers_html,
     )
 
 
@@ -143,10 +146,12 @@ _TEMPLATE = """<!DOCTYPE html>
       <div class="tab active" data-pane="tasks">Tasks</div>
       <div class="tab" data-pane="sprint">Sprint Summary</div>
       <div class="tab" data-pane="triage">Bug Triage</div>
+      <div class="tab" data-pane="speakers">By Speaker</div>
     </div>
     <div class="pane active" id="tasks">{tasks_html}</div>
     <div class="pane" id="sprint">{sprint_html}</div>
     <div class="pane" id="triage">{triage_html}</div>
+    <div class="pane" id="speakers">{speakers_html}</div>
   </div>
 </div>
 <script>
