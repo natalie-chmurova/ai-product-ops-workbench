@@ -31,6 +31,8 @@ from src.artifacts import (
 )
 from src.assignees import roster_line, team_roster
 from src.client import WorkbenchError
+from src.clickup import get_tasks
+from src.reconcile import plan_markdown, reconcile, split_by_confidence
 from src.extract import extract_context
 from src.render import render_report
 from src.transcribe import is_audio, transcribe_audio
@@ -81,6 +83,16 @@ def run(transcript_path: Path) -> None:
     _write(OUTPUT_DIR / "sprint_summary.md", sprint_md)
     _write(OUTPUT_DIR / "bug_triage.md", triage_md)
     _write(OUTPUT_DIR / "speaker_summary.md", speakers_md)
+
+    board = get_tasks()
+    if board:
+        print(f"Stage 2.5/3  Reconciling against the board ({len(board)} open tasks)...")
+        decisions = reconcile(context.get("action_items", []), board)
+        create, comment, ask = split_by_confidence(decisions)
+        _write(OUTPUT_DIR / "board_plan.md", plan_markdown(decisions, board))
+        print(f"  create {len(create)} · comment on existing {len(comment)} · ask a human {len(ask)}")
+    else:
+        print("Stage 2.5/3  No board configured — every point counts as new.")
 
     print("Stage 3/3  Rendering the report page...")
     report_html = render_report(transcript, tasks, sprint_md, triage_md, speakers_md)

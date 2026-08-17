@@ -55,6 +55,48 @@ def get_lists() -> list[dict]:
     return out
 
 
+def get_tasks(list_id: str | None = None, include_closed: bool = False) -> list[dict]:
+    """Read the board: open tasks in a list, as [{id, name, status, assignees}].
+
+    Until this existed the pipeline could only write. Without reading the board
+    first, every meeting point looks like new work — which is how a decision
+    turns into a task and work already in progress turns into a duplicate.
+    Returns [] rather than raising when nothing is configured, so callers can
+    degrade to board-blind behaviour instead of failing.
+    """
+    list_id = list_id or os.environ.get("CLICKUP_LIST_ID")
+    if not list_id:
+        return []
+    params = "include_closed=true" if include_closed else "include_closed=false"
+    r = requests.get(f"{API}/list/{list_id}/task?{params}", headers=_headers(), timeout=20)
+    if r.status_code != 200:
+        return []
+    out = []
+    for t in r.json().get("tasks", []):
+        out.append(
+            {
+                "id": t.get("id", ""),
+                "name": t.get("name", ""),
+                "status": (t.get("status") or {}).get("status", ""),
+                "assignees": [a.get("username", "") for a in t.get("assignees", [])],
+            }
+        )
+    return out
+
+
+def add_comment(task_id: str, text: str) -> tuple[bool, str]:
+    """Comment on an existing task — the effect that replaces creating a duplicate."""
+    r = requests.post(
+        f"{API}/task/{task_id}/comment",
+        headers=_headers(),
+        json={"comment_text": text, "notify_all": False},
+        timeout=20,
+    )
+    if r.status_code in (200, 201):
+        return True, task_id
+    return False, f"HTTP {r.status_code}: {r.text[:120]}"
+
+
 def _create_task(list_id: str, task: dict, assignee_id: str | None = None) -> tuple[bool, str]:
     """Create one task. Returns (ok, task_name_or_error)."""
     payload = {
