@@ -1,7 +1,7 @@
 {
   "transcript": "samples/transcript_demo.txt",
   "status": "DRAFT — awaiting Natallia's validation",
-  "scenario": "The board as it stands when this meeting is processed a second time — the re-processing case. Unlike the messy fixtures this is not a before-board: almost every task here is created by this meeting, so a before-board would be empty and nothing could be commented on.",
+  "scenario": "The demo meeting processed again against a board that has moved one meeting ahead. Two of these tasks — [iOS] Checkout abandonment spike and [QA] Additional Android test devices approved — come from the follow-up sync (samples/transcript_followup.txt), not from this meeting, because the live board carries the traces of both runs. Calling this simply 'the second processing of this meeting' would have been wrong. Kept as is rather than trimmed: removing them would stop this being the snapshot minus duplicates, and the clutter comparison would gain a second variable.",
   "note": "Derived from board_demo_live_snapshot.json by removing three duplicate tasks and nothing else — same ids, same names, same fields. The pair differs by exactly one variable, which is what makes the clutter comparison mean anything. Removed: 86eyd348y (duplicate of 86eyay0p7); 86eyd347m (duplicate of 86ey9z6rc); 86eyay0kt (duplicate of 86ey9z6rc). Also doubles as an idempotency rig: the Python pipeline has never been asked whether a second pass comments rather than duplicates (WB-7).",
   "tasks": [
     {

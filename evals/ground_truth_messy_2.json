@@ -26,7 +26,7 @@
       "type": "bug",
       "manager_note": "A separate bug, linked to Marco's parent search task. He said 'fix is small, I'll do it today' — so the deadline is that same day.",
       "expected_effect": "create",
-      "review_note": "AMBIGUOUS — B1 is Marco's search diagnosis, and the tokenizer IS its finding. Labelled create because your note calls it 'a separate bug, linked to Marco's parent search task', but that reads as create-plus-link, and linking is WB-17."
+      "review_note": "DECIDED by Natallia, 2026-08-18. Create. The tokenizer is a separate defect with its own same-day fix, found inside the diagnosis rather than being it. The link to the parent search task is WB-17 and does not make it the same work."
     },
     {
       "id": "gt2",
@@ -55,7 +55,7 @@
       "manager_note": "Finally has an owner — Marco takes it after the search work. Set it as dependent on the search task; if that task has a deadline, a start date can be inferred from it.",
       "expected_effect": "comment",
       "expected_target": "B5",
-      "review_note": "CHANGED BY THE FIXTURE — labelled must/new, but last week's meeting created this unassigned (B5). If that is right, this week's 'I'll take it after search' is a comment plus an owner, not a second task. Natallia to confirm."
+      "review_note": "DECIDED by Natallia, 2026-08-18. Comment on B5 plus an owner. Last week created this unassigned; a second task would be a duplicate of itself."
     },
     {
       "id": "gt5",
@@ -78,5 +78,5 @@
     }
   ],
   "board": "evals/board_messy_2.json",
-  "labels_status": "expected_effect DRAFT — transcribed from the prose verdicts, awaiting Natallia"
+  "labels_status": "expected_effect VALIDATED by Natallia (18 Aug 2026)"
 }
