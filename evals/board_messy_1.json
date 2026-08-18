@@ -1,0 +1,36 @@
+{
+  "transcript": "samples/transcript_messy_1.txt",
+  "status": "DRAFT — awaiting Natallia's validation",
+  "scenario": "The board before the meeting of Mon 2026-08-17. Work the transcript treats as already under way.",
+  "note": "Deliberately absent: any tokenization task. The ground truth says to check whether one exists and create it if not, so putting one here would erase the case being measured.",
+  "tasks": [
+    {
+      "id": "B1",
+      "name": "[Release] Cut the August release",
+      "status": "in progress",
+      "assignees": ["Dana"],
+      "due_date": "2026-08-19"
+    },
+    {
+      "id": "B2",
+      "name": "[Payments][QA] Regression testing on the payments flow",
+      "status": "in progress",
+      "assignees": ["Sam"],
+      "due_date": "2026-08-19"
+    },
+    {
+      "id": "B3",
+      "name": "[Search] Improve search relevance ranking",
+      "status": "in progress",
+      "assignees": ["Marco"],
+      "due_date": ""
+    },
+    {
+      "id": "B4",
+      "name": "[Design] Onboarding illustrations",
+      "status": "to do",
+      "assignees": ["Priya"],
+      "due_date": ""
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "transcript": "samples/transcript_demo.txt",
+  "status": "DRAFT — awaiting Natallia's validation",
+  "scenario": "The board as it stands when this meeting is processed a second time — the re-processing case. Unlike the messy fixtures this is not a before-board: almost every task here is created by this meeting, so a before-board would be empty and nothing could be commented on.",
+  "note": "Derived from board_demo_live_snapshot.json by removing three duplicate tasks and nothing else — same ids, same names, same fields. The pair differs by exactly one variable, which is what makes the clutter comparison mean anything. Removed: 86eyd348y (duplicate of 86eyay0p7); 86eyd347m (duplicate of 86ey9z6rc); 86eyay0kt (duplicate of 86ey9z6rc). Also doubles as an idempotency rig: the Python pipeline has never been asked whether a second pass comments rather than duplicates (WB-7).",
+  "tasks": [
+    {
+      "id": "86eybqz2t",
+      "name": "[iOS] Checkout abandonment spike investigation",
+      "status": "to do",
+      "assignees": [],
+      "due_date": ""
+    },
+    {
+      "id": "86eybqz2k",
+      "name": "[QA] Additional Android test devices approved",
+      "status": "to do",
+      "assignees": [],
+      "due_date": ""
+    },
+    {
+      "id": "86eyay0p7",
+      "name": "[Checkout][Dev] Resolve payment provider sandbox rejection for saved cards",
+      "status": "to do",
+      "assignees": [],
+      "due_date": ""
+    },
+    {
+      "id": "86ey9z6rc",
+      "name": "[Product Detail][Dev] Fix Android crash from null image carousel on empty-image products",
+      "status": "to do",
+      "assignees": [],
+      "due_date": ""
+    },
+    {
+      "id": "86ey9z6r6",
+      "name": "[Checkout][Product] Get decline copy reviewed by legal",
+      "status": "to do",
+      "assignees": [],
+      "due_date": ""
+    },
+    {
+      "id": "86ey9z6qq",
+      "name": "[Checkout][Design] Finalize payment decline error state designs",
+      "status": "to do",
+      "assignees": [],
+      "due_date": ""
+    },
+    {
+      "id": "86ey9z6qj",
+      "name": "[Checkout][Dev] Wire up detailed payment error states",
+      "status": "to do",
+      "assignees": [],
+      "due_date": ""
+    },
+    {
+      "id": "86ey9z6qa",
+      "name": "[Checkout][Product] Plan saved cards as fast-follow release",
+      "status": "to do",
+      "assignees": [],
+      "due_date": ""
+    }
+  ]
+}

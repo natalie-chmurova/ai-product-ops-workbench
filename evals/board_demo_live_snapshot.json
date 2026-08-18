@@ -1,0 +1,85 @@
+{
+  "transcript": "samples/transcript_demo.txt",
+  "status": "CAPTURED from the live ClickUp list on 2026-08-18 — not hand-edited",
+  "scenario": "The same board as board_demo.json, as it actually stands: with the duplicate tasks left by earlier test runs.",
+  "note": "Committed because it contains the duplicates. They are the independent variable in the clutter measurement, not noise to tidy away. Do not clean this file.",
+  "tasks": [
+    {
+      "id": "86eyd348y",
+      "name": "[Checkout][Dev] Resolve saved cards payment provider sandbox rejection",
+      "status": "to do",
+      "assignees": [],
+      "due_date": ""
+    },
+    {
+      "id": "86eyd347m",
+      "name": "[ProductDetail][Dev] Fix null crash in image carousel when product has no images",
+      "status": "to do",
+      "assignees": [],
+      "due_date": ""
+    },
+    {
+      "id": "86eybqz2t",
+      "name": "[iOS] Checkout abandonment spike investigation",
+      "status": "to do",
+      "assignees": [],
+      "due_date": ""
+    },
+    {
+      "id": "86eybqz2k",
+      "name": "[QA] Additional Android test devices approved",
+      "status": "to do",
+      "assignees": [],
+      "due_date": ""
+    },
+    {
+      "id": "86eyay0p7",
+      "name": "[Checkout][Dev] Resolve payment provider sandbox rejection for saved cards",
+      "status": "to do",
+      "assignees": [],
+      "due_date": ""
+    },
+    {
+      "id": "86eyay0kt",
+      "name": "[Product Detail][QA] Fix crash on product detail screen for items with no images",
+      "status": "to do",
+      "assignees": [],
+      "due_date": ""
+    },
+    {
+      "id": "86ey9z6rc",
+      "name": "[Product Detail][Dev] Fix Android crash from null image carousel on empty-image products",
+      "status": "to do",
+      "assignees": [],
+      "due_date": ""
+    },
+    {
+      "id": "86ey9z6r6",
+      "name": "[Checkout][Product] Get decline copy reviewed by legal",
+      "status": "to do",
+      "assignees": [],
+      "due_date": ""
+    },
+    {
+      "id": "86ey9z6qq",
+      "name": "[Checkout][Design] Finalize payment decline error state designs",
+      "status": "to do",
+      "assignees": [],
+      "due_date": ""
+    },
+    {
+      "id": "86ey9z6qj",
+      "name": "[Checkout][Dev] Wire up detailed payment error states",
+      "status": "to do",
+      "assignees": [],
+      "due_date": ""
+    },
+    {
+      "id": "86ey9z6qa",
+      "name": "[Checkout][Product] Plan saved cards as fast-follow release",
+      "status": "to do",
+      "assignees": [],
+      "due_date": ""
+    }
+  ]
+}
