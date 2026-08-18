@@ -19,8 +19,28 @@ from .client import ask, load_prompt
 
 
 def board_summary(tasks: list[dict]) -> str:
-    """The board as the agent sees it: one `id | name` per line."""
-    return "\n".join(f"{t['id']} | {t.get('name', '')}" for t in tasks)
+    """The board as the agent sees it: id, name, and whatever else the task carries.
+
+    Status, owner and deadline are read from the tracker already — they were simply
+    dropped before the agent ever saw them. That is why "they said it's done" and
+    "that date slipped" had nothing to reason against: the agent cannot check a
+    status it was never shown.
+
+    Empty fields are omitted rather than rendered as "none", so a sparse board stays
+    readable and a board carrying only id and name renders exactly as it used to.
+    """
+    lines = []
+    for t in tasks:
+        parts = [f"{t.get('id', '')} | {t.get('name', '')}"]
+        if t.get("status"):
+            parts.append(f"status: {t['status']}")
+        owners = ", ".join(a for a in t.get("assignees", []) if a)
+        if owners:
+            parts.append(f"owner: {owners}")
+        if t.get("due_date"):
+            parts.append(f"due: {t['due_date']}")
+        lines.append(" | ".join(parts))
+    return "\n".join(lines)
 
 
 def parse_decision(reply: str, board: list[dict]) -> dict:

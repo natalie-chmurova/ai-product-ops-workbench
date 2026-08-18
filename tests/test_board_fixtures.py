@@ -90,3 +90,42 @@ def test_due_date_absent_is_empty_not_epoch_zero():
 
 def test_due_date_that_makes_no_sense_does_not_crash_the_run():
     assert _iso_date("tomorrow") == ""
+
+
+# --- what the agent is shown --------------------------------------------------
+
+from src.reconcile import board_summary
+
+RICH_BOARD = [
+    {
+        "id": "B1",
+        "name": "[Release] Cut the August release",
+        "status": "in progress",
+        "assignees": ["Dana"],
+        "due_date": "2026-08-19",
+    },
+    {"id": "B2", "name": "Bare task", "status": "", "assignees": [], "due_date": ""},
+    {
+        "id": "B3",
+        "name": "Shared task",
+        "status": "to do",
+        "assignees": ["Sam", "Marco"],
+        "due_date": "",
+    },
+]
+
+
+def test_summary_shows_status_owner_and_due():
+    line = board_summary(RICH_BOARD).splitlines()[0]
+    assert line == (
+        "B1 | [Release] Cut the August release | status: in progress "
+        "| owner: Dana | due: 2026-08-19"
+    )
+
+
+def test_summary_omits_empty_fields_entirely():
+    assert board_summary(RICH_BOARD).splitlines()[1] == "B2 | Bare task"
+
+
+def test_summary_joins_several_assignees():
+    assert board_summary(RICH_BOARD).splitlines()[2] == "B3 | Shared task | status: to do | owner: Sam, Marco"

@@ -16,7 +16,8 @@ BOARD = [
 ]
 
 
-def test_board_summary_is_id_and_name():
+def test_board_summary_falls_back_to_id_and_name():
+    # A board with no status, owner or deadline renders exactly as it always did.
     assert board_summary(BOARD) == "86abc | [Payments] Fix saved cards\n86def | [Android] Crash on product detail"
 
 
