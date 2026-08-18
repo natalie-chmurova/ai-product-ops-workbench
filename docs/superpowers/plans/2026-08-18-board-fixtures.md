@@ -769,6 +769,8 @@ Every file here is a **draft**. It carries a `status` field saying so, and no pu
 
 **How the drafts were derived.** A task belongs on the board when the transcript treats it as already existing — "we said we'd cut it Wednesday", "I'm on regression until Wednesday", "I was mostly in the search thing still". Dates come from the transcripts and are calendar-consistent: messy_1 is Monday 2026-08-17 (release Wednesday the 19th, Marco's diagnosis Thursday the 20th); messy_2 is the following Monday, 2026-08-24 (the incident "on Friday" is the 21st, the Thursday that slipped is the 20th).
 
+**Side effect worth not losing.** The demo fixture's scenario — the same meeting processed twice — is literally the idempotency case, which until now has only ever been asked of the n8n path (WB-7). This fixture makes it answerable of the Python pipeline with no new scaffolding. Not built here; noted so the connection survives.
+
 **A `scenario` field, and why it is not the same for every fixture.** For the messy transcripts the fixture is the board *before* that meeting — previous weeks' work. For demo it cannot be: nearly every task in that meeting is created *by* it, so a before-board would be almost empty and nothing could be commented on. The demo fixture therefore represents the board as it stands when that meeting is processed a second time — the re-processing case, and the one that proves a re-run comments instead of duplicating. Each file states which it is, because a fixture whose meaning has to be inferred will be read wrong.
 
 - [ ] **Step 1: Write the messy-1 fixture**
