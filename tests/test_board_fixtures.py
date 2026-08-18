@@ -168,3 +168,58 @@ def test_the_gate_does_not_relabel_a_confident_decision():
     create, _, ask = split_by_confidence([confident])
     assert not ask
     assert create[0]["escalation_cause"] == ""
+
+
+# --- scoring the effect -------------------------------------------------------
+
+from evals.eval_effects import score
+
+
+def test_a_correct_comment_needs_the_right_target():
+    entries = [
+        {"id": "gt1", "expected_effect": "comment", "expected_target": "B1"},
+        {"id": "gt2", "expected_effect": "comment", "expected_target": "B1"},
+    ]
+    decided = [
+        {"id": "gt1", "effect": "comment", "target_id": "B1", "escalation_cause": ""},
+        {"id": "gt2", "effect": "comment", "target_id": "B9", "escalation_cause": ""},
+    ]
+    result = score(entries, decided)
+    assert result["effect_correct"] == 2   # both chose to comment
+    assert result["target_correct"] == 1   # only one aimed correctly
+
+
+def test_a_guardrail_escalation_is_not_a_correct_ask():
+    entries = [{"id": "gt1", "expected_effect": "ask"}, {"id": "gt2", "expected_effect": "ask"}]
+    decided = [
+        {"id": "gt1", "effect": "ask", "target_id": "", "escalation_cause": "low_confidence"},
+        {"id": "gt2", "effect": "ask", "target_id": "", "escalation_cause": "unreadable"},
+    ]
+    result = score(entries, decided)
+    assert result["effect_correct"] == 1
+    assert result["by_cause"]["unreadable"] == 1
+
+
+def test_unimplemented_effects_score_zero():
+    entries = [{"id": "n1", "expected_effect": "verify_deadline", "expected_target": "B2"}]
+    decided = [{"id": "n1", "effect": "create", "target_id": "", "escalation_cause": ""}]
+    result = score(entries, decided)
+    assert result["effect_correct"] == 0
+    assert result["per_effect"]["verify_deadline"] == {"total": 1, "correct": 0}
+
+
+def test_a_miss_records_what_the_agent_was_about_to_do():
+    entries = [{"id": "gt1", "expected_effect": "comment", "expected_target": "B1"}]
+    decided = [
+        {
+            "id": "gt1",
+            "effect": "create",
+            "target_id": "",
+            "escalation_cause": "",
+            "decision": "NEW",
+            "reason": "nothing on the board covers this",
+        }
+    ]
+    miss = score(entries, decided)["misses"][0]
+    assert miss["expected"] == "comment" and miss["got"] == "create"
+    assert miss["intent"] == "NEW NONE"
