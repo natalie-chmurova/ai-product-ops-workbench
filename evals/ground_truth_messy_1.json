@@ -7,12 +7,14 @@
     {
       "item": "Ship the Wednesday release with payments cut out",
       "verdict": "NOT a new task — this is a decision. The team split one release in two: part ships Wednesday, payments follow later with no date agreed. Expected effect: a comment on the existing release task, plus a line in the daily summary doc.",
-      "expected_effect": "comment on existing task"
+      "expected_effect": "comment",
+      "expected_target": "B1"
     },
     {
       "item": "Finish regression testing on the payments flow (Sam)",
       "verdict": "NOT a new task — 'I'm on regression until Wednesday' means the task already exists and is already assigned to him. Creating a second one is duplication. Expected effect: check the deadline on the board and, if it differs from what was said, leave a comment for the manager to decide — do not overwrite the date.",
-      "expected_effect": "verify deadline, comment if it differs"
+      "expected_effect": "verify_deadline",
+      "expected_target": "B2"
     }
   ],
   "tasks": [
@@ -21,14 +23,17 @@
       "summary": "Diagnose the search relevance/ranking problem with queries longer than three words, report back Thursday",
       "owner_hint": "Marco",
       "must": true,
-      "manager_note": "Deadline was restated at the close of the meeting — check how it stands on the board."
+      "manager_note": "Deadline was restated at the close of the meeting — check how it stands on the board.",
+      "expected_effect": "create",
+      "review_note": "AMBIGUOUS — the board has B3 'Improve search relevance ranking' (Marco). Labelled create because the diagnosis is a distinct deliverable with its own Thursday deadline, but an UPDATE to B3 is defensible. Natallia decides."
     },
     {
       "id": "gt3",
       "summary": "Wire up the payment tokenization on our side (provider side is done; deferred out of this release)",
       "owner_hint": "Marco",
       "must": true,
-      "manager_note": "Check whether this task already exists first. If not, create it and link it to the payments regression-flow task it blocks."
+      "manager_note": "Check whether this task already exists first. If not, create it and link it to the payments regression-flow task it blocks.",
+      "expected_effect": "create"
     },
     {
       "id": "gt5",
@@ -36,7 +41,8 @@
       "owner_hint": "unassigned",
       "must": true,
       "destination": "backlog",
-      "manager_note": "Nobody was free on the call, so it goes to the backlog unassigned — the manager adds the owner later. Dana said 'this week', so set that as a deadline or record it as a comment so it isn't forgotten."
+      "manager_note": "Nobody was free on the call, so it goes to the backlog unassigned — the manager adds the owner later. Dana said 'this week', so set that as a deadline or record it as a comment so it isn't forgotten.",
+      "expected_effect": "create"
     },
     {
       "id": "gt6",
@@ -44,7 +50,10 @@
       "owner_hint": "Priya",
       "must": false,
       "why_debatable": "Check whether the task exists first. If it does, the right effect is a deadline (the next release date, from the release calendar) or a comment — not a new task.",
-      "expected_effect": "set deadline or comment if the task already exists"
+      "expected_effect": "comment",
+      "expected_target": "B4"
     }
-  ]
+  ],
+  "board": "evals/board_messy_1.json",
+  "labels_status": "expected_effect DRAFT — transcribed from the prose verdicts, awaiting Natallia"
 }

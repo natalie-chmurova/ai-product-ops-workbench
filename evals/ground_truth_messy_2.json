@@ -7,12 +7,14 @@
     {
       "item": "Marco's search diagnosis slipped from Thursday",
       "verdict": "NOT a task — a slipped commitment. Expected effect: a comment on the existing search task recording that it slipped and why (pulled into the CDN incident), so the manager can re-prioritise.",
-      "expected_effect": "comment on existing task"
+      "expected_effect": "verify_deadline",
+      "expected_target": "B1"
     },
     {
       "item": "Sam: 'regression is done, everything green except one flaky test'",
       "verdict": "A completion claim, not a task. Expected effect: check the task's status on the board; if the developer hasn't moved it, notify the manager that it can go to In Review; and leave a comment about the still-failing test.",
-      "expected_effect": "verify status, notify, comment"
+      "expected_effect": "verify_status",
+      "expected_target": "B2"
     }
   ],
   "tasks": [
@@ -22,7 +24,9 @@
       "owner_hint": "Marco",
       "must": true,
       "type": "bug",
-      "manager_note": "A separate bug, linked to Marco's parent search task. He said 'fix is small, I'll do it today' — so the deadline is that same day."
+      "manager_note": "A separate bug, linked to Marco's parent search task. He said 'fix is small, I'll do it today' — so the deadline is that same day.",
+      "expected_effect": "create",
+      "review_note": "AMBIGUOUS — B1 is Marco's search diagnosis, and the tokenizer IS its finding. Labelled create because your note calls it 'a separate bug, linked to Marco's parent search task', but that reads as create-plus-link, and linking is WB-17."
     },
     {
       "id": "gt2",
@@ -31,7 +35,8 @@
       "must": true,
       "type": "bug",
       "destination": "backlog",
-      "manager_note": "Newly surfaced defect → bug in the backlog, not the running sprint. Attach the context with the meeting date: Priya noticed it a while ago and thought she had mentioned it, Dana said it looks broken, Marco expects a small layout fix."
+      "manager_note": "Newly surfaced defect → bug in the backlog, not the running sprint. Attach the context with the meeting date: Priya noticed it a while ago and thought she had mentioned it, Dana said it looks broken, Marco expects a small layout fix.",
+      "expected_effect": "create"
     },
     {
       "id": "gt3",
@@ -39,14 +44,18 @@
       "owner_hint": "Sam",
       "must": true,
       "destination": "backlog",
-      "manager_note": "Sam said he'd dig into it after the release — record that context. Flaky for ~2 months, noise every release."
+      "manager_note": "Sam said he'd dig into it after the release — record that context. Flaky for ~2 months, noise every release.",
+      "expected_effect": "create"
     },
     {
       "id": "gt4",
       "summary": "Pick up the duplicated push notifications issue carried over from last week",
       "owner_hint": "Marco",
       "must": true,
-      "manager_note": "Finally has an owner — Marco takes it after the search work. Set it as dependent on the search task; if that task has a deadline, a start date can be inferred from it."
+      "manager_note": "Finally has an owner — Marco takes it after the search work. Set it as dependent on the search task; if that task has a deadline, a start date can be inferred from it.",
+      "expected_effect": "comment",
+      "expected_target": "B5",
+      "review_note": "CHANGED BY THE FIXTURE — labelled must/new, but last week's meeting created this unassigned (B5). If that is right, this week's 'I'll take it after search' is a comment plus an owner, not a second task. Natallia to confirm."
     },
     {
       "id": "gt5",
@@ -55,7 +64,8 @@
       "must": true,
       "type": "bug",
       "destination": "backlog",
-      "manager_note": "Raised hedged ('maybe', 'if it happens again') — but these are exactly the items that get lost. Record it as a bug in the backlog with the context; the manager decides later whether it earns a slot."
+      "manager_note": "Raised hedged ('maybe', 'if it happens again') — but these are exactly the items that get lost. Record it as a bug in the backlog with the context; the manager decides later whether it earns a slot.",
+      "expected_effect": "create"
     },
     {
       "id": "gt6",
@@ -63,7 +73,10 @@
       "owner_hint": "Priya",
       "must": false,
       "why_debatable": "Check the task exists and whether it already carries a note or a deadline for the next release; the right effect is a deadline or a comment rather than a new task.",
-      "expected_effect": "set deadline or comment if the task already exists"
+      "expected_effect": "comment",
+      "expected_target": "B4"
     }
-  ]
+  ],
+  "board": "evals/board_messy_2.json",
+  "labels_status": "expected_effect DRAFT — transcribed from the prose verdicts, awaiting Natallia"
 }
