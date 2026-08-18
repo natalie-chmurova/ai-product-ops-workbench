@@ -26,3 +26,8 @@ Board: 7 tasks · points: 10 (6 true updates, 4 true new) · scored by exact mat
 > new rules are never reached". The number is now honest about *which* agent it
 > describes; it still says nothing about the two rules themselves. Points that exercise
 > them are the obvious next addition.
+>
+> Put precisely: this run confirms the **old** rules still hold on the shipped prompt.
+> The two added rules are not confirmed by it at all — nothing in the set reaches them.
+> "The eval now measures the production agent" is true about the prompt it loads and
+> false about the coverage it gives.
