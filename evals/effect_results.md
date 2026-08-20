@@ -6,7 +6,7 @@ Points come from the validated ground truth, not from extraction: an extraction 
 
 An `ask` counts as correct only when it came from honest doubt. An escalation caused by an unreadable reply or a target absent from the board is a guardrail firing, and crediting it would report a broken run as a good one.
 
-**The effect labels were validated by Natallia on 18 Aug 2026.** Rows marked ⚑ are ones the fixtures forced a judgement on; each carries her verdict as a `review_note` in the ground truth.
+**Label status:** expected_effect VALIDATED by Natallia (18 Aug 2026). Rows marked ⚑ are ones the fixtures forced a judgement on; they carry a `review_note` in the ground truth.
 
 ## Summary
 

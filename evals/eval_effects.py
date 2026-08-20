@@ -81,6 +81,7 @@ def load_sets(only: str | None = None) -> list[dict]:
                 name=path.name,
                 label=gt.get("label", "clean"),
                 board_ref=gt["board"],
+                labels_status=gt.get("labels_status", ""),
                 entries=entries,
             )
         )
@@ -172,6 +173,16 @@ def score(entries: list[dict], decided: list[dict]) -> dict:
 
 
 def report(results: list[dict], board_override: str | None) -> str:
+    # Whether the labels are signed off is a fact about the ground truth, so read it
+    # from there. The hardcoded "DRAFT" that used to live here went stale the moment
+    # Natallia signed them off, and the next run would have silently overwritten her
+    # note with it again.
+    statuses = sorted({r["set"]["labels_status"] for r in results if r["set"]["labels_status"]})
+    status_line = (
+        "**Label status:** " + "; ".join(statuses) + "."
+        if statuses
+        else "**The effect labels are DRAFT** and have not been validated."
+    )
     lines = [
         f"# Effect eval (what the pipeline decides to DO) — {date.today().isoformat()}",
         "",
@@ -185,9 +196,8 @@ def report(results: list[dict], board_override: str | None) -> str:
         "caused by an unreadable reply or a target absent from the board is a guardrail "
         "firing, and crediting it would report a broken run as a good one.",
         "",
-        "**The effect labels are DRAFT** and have not been validated. Rows marked ⚑ are "
-        "ones the fixtures forced a judgement on; they carry a `review_note` in the "
-        "ground truth.",
+        status_line + " Rows marked ⚑ are ones the fixtures forced a judgement on; "
+        "they carry a `review_note` in the ground truth.",
         "",
     ]
     if board_override:
