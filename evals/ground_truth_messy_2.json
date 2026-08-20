@@ -2,7 +2,7 @@
   "transcript": "samples/transcript_messy_2.txt",
   "label": "messy 2 — noise, a task raised in passing, a hedged follow-up",
   "status": "VALIDATED by Natallia (17 Aug 2026) — labels below reflect her product judgement, not the assistant's draft",
-  "note": "Ground truth for task extraction on a deliberately messy transcript. 'must' = a real NEW task any competent PM would create. 'debatable' = reasonable to include or fold elsewhere; found = fine, missed = not penalized. Deliberate traps, intentionally NOT in this list: the traffic small talk is pure noise, and the CDN incident itself 'resolved itself' — the incident is not work, only the alerting follow-up is.",
+  "note": "Ground truth for task extraction on a deliberately messy transcript. 'must' = a point a competent PM must not miss. It asks whether the pipeline should surface this at all, not what should then happen to it — creating a task and commenting on one that already exists are both correct outcomes for a 'must' point, and which one is right is labelled separately in `expected_effect`. 'debatable' = reasonable to include or fold elsewhere; found = fine, missed = not penalized. Deliberate traps, intentionally NOT in this list: the traffic small talk is pure noise, and the CDN incident itself 'resolved itself' — the incident is not work, only the alerting follow-up is.",
   "manager_notes": [
     {
       "item": "Marco's search diagnosis slipped from Thursday",
