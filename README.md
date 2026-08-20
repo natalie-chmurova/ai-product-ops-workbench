@@ -113,30 +113,61 @@ four of ten misses the agent decided exactly what the labels expect and escalate
 below the gate), and the decision eval's ten points do not reach two of the rules its own
 prompt now carries.
 
+The effect eval keeps its raw decisions in `evals/effect_decisions.json`. The model call is
+the expensive half of that harness and the confidence gate is the cheap one, so asking
+where the gate belongs is a re-read rather than another run:
+
+```bash
+python evals/eval_effects.py --sweep              # accuracy across gates 0.50-0.95, no API calls
+python evals/eval_effects.py --replay --threshold 0.7
+```
+
+That matters because calibration is the largest bucket of misses — four of ten — so the
+cheapest available experiment is also the one aimed at the biggest share of the failure.
+The sweep is still scored against the labels it would be tuned on, so it reports what a
+threshold could have bought on this set, not what to set it to.
+
+
 ## The apply gate
 
 The pipeline builds a plan and stops. It writes `outputs/board_plan.md` and never touches
-the tracker. That is a decision, not an unfinished feature, and the numbers above are the
-reason for it.
+the tracker. That is a decision, not an unfinished feature — and the reason is the shape of
+the misses, not the headline number.
 
-Applying automatically was rejected on three measured grounds:
+### What the 50–67% is actually made of
 
-- **Effect accuracy on messy input is 50–67%.** That is the rate at which the agent picks
-  the right thing to do with a point. A tracker written to at that rate produces work a
-  human has to audit line by line, which is more expensive than reading the plan.
+Ten misses across the three transcripts, and they are three different things:
+
+| bucket | misses | what happened |
+|---|---|---|
+| calibration | 4 | the agent chose exactly what the labels expect, scored below the 0.8 gate, and escalated anyway |
+| no mechanism | 3 | a `verify_deadline` / `verify_status` point with nothing to express it — each landed as a comment on the **right** task (B2, B1, B2) |
+| judgement | 3 | the agent genuinely matched the wrong thing |
+
+So **three of ten are real errors of judgement.** Counting the agent's underlying intent
+rather than the gated outcome, the same runs read **82% / 83% / 63%**.
+
+Neither number is the honest one alone. Effect accuracy folds judgement together with
+confidence calibration, and quoting only the low figure understates the agent as badly as
+quoting only the high one would flatter it. The pair is the measurement.
+
+### Why the gate stays closed anyway
+
+- **Three judgement errors in ten is still too many to write into a live board.** The
+  calibration misses are safe failures — they escalate to a human. The judgement ones are
+  not: they act confidently on the wrong task.
 - **Two of the five effects do not exist.** `verify_deadline` and `verify_status` (WB-9,
-  WB-18) have no implementation, so every point that needs one currently degrades to a
-  comment. Applying now would silently convert "check this date" into "leave a note".
-- **On a cluttered board the agent aims at the duplicate.** The clutter measurement above
-  is not hypothetical: the live board really did carry three duplicate rows from old test
-  runs, and the agent matched the copy instead of the original. Idempotency protects
-  against applying the same effect twice; it does not protect against applying the
-  correct effect to the wrong task.
+  WB-18) have no implementation, so a point needing one degrades to a comment. Applying
+  now would silently convert "check this date" into "leave a note".
+- **On a cluttered board the agent aims at the duplicate.** Not hypothetical: the live
+  board carried three duplicate rows from old test runs, and the agent matched the copy
+  instead of the original. Idempotency stops the same effect being applied twice; it does
+  not stop the correct effect landing on the wrong task.
 
 And the number is probably generous. These transcripts are the ones the extraction and
 routing rules were derived from — there is no held-out set. On a meeting the rules have
-never seen, effect accuracy should be expected to be lower, not higher. Until a held-out
-transcript exists, 50–67% is a ceiling estimate, not a floor.
+never seen, expect lower, not higher. Until a held-out transcript exists, 50–67% is a
+ceiling estimate rather than a floor.
 
 The gate reopens when WB-9 and WB-18 land and the effect eval is re-run against a
 transcript that did not shape the rules.
