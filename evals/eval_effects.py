@@ -20,17 +20,28 @@ An `ask` counts as correct only when it came from honest doubt. An escalation ca
 by an unreadable reply or a target absent from the board is a guardrail firing —
 crediting it would report a broken run as a good one.
 
+The raw decisions are kept in `evals/effect_decisions.json`. The model call is the
+expensive half of this harness and the confidence gate is the cheap one, so questions
+about where the gate belongs are answered by re-reading that file rather than by paying
+for another run.
+
 Usage:
   python evals/eval_effects.py               every labeled transcript
   python evals/eval_effects.py --only messy  only sets whose filename matches
   python evals/eval_effects.py --only ground_truth.json --board evals/board_demo_live_snapshot.json
                                              override the fixture (the clutter measurement)
   python evals/eval_effects.py --dry-run     list what would run, call no API
-Writes: evals/effect_results.md
+  python evals/eval_effects.py --replay      re-score saved decisions, call no API
+  python evals/eval_effects.py --replay --threshold 0.7
+                                             the same decisions at a different gate
+  python evals/eval_effects.py --sweep       accuracy across gates 0.50-0.95, call no API
+Writes: evals/effect_results.md, evals/effect_decisions.json
+        evals/threshold_sweep.md (--sweep)
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import sys
 from datetime import date
@@ -48,6 +59,9 @@ from src.reconcile import reconcile, split_by_confidence  # noqa: E402
 
 EFFECTS = ("create", "comment", "ask", "verify_deadline", "verify_status")
 UNIMPLEMENTED = ("verify_deadline", "verify_status")
+DECISIONS_PATH = ROOT / "evals" / "effect_decisions.json"
+SWEEP_PATH = ROOT / "evals" / "threshold_sweep.md"
+GATE = 0.8
 
 
 def load_sets(only: str | None = None) -> list[dict]:
@@ -88,11 +102,29 @@ def load_sets(only: str | None = None) -> list[dict]:
     return sets
 
 
-def decide_all(entries: list[dict], board: list[dict]) -> list[dict]:
-    """Route every point through the real reconciler and flatten to one effect each."""
+def decide_raw(entries: list[dict], board: list[dict]) -> list[dict]:
+    """Route every point through the real reconciler. One model call per point."""
     points = [{"what": e["name"], "context": e["detail"]} for e in entries]
-    decisions = reconcile(points, board)
-    create, comment, ask = split_by_confidence(decisions)
+    return reconcile(points, board)
+
+
+def effects_from(entries: list[dict], decisions: list[dict], threshold: float = GATE) -> list[dict]:
+    """Flatten raw decisions to one effect each, at a given confidence gate.
+
+    Pure and free. The model call is the expensive half of this harness and the gate is
+    the cheap one, which is why the raw decisions are kept rather than discarded after
+    scoring: asking where the threshold should sit is then a re-read, not another run.
+    """
+    decisions = copy.deepcopy(decisions)
+    # split_by_confidence stamps "low_confidence" on whatever falls below the gate, so a
+    # replay at a different threshold has to clear the previous pass's stamp first. A
+    # cause a guardrail set — an unreadable reply, a target absent from the board — is a
+    # fact about the reply rather than about the gate, and survives.
+    for d in decisions:
+        if d.get("escalation_cause") == "low_confidence":
+            d["escalation_cause"] = ""
+
+    create, comment, ask = split_by_confidence(decisions, threshold)
     effect_of = {id(d): "create" for d in create}
     effect_of.update({id(d): "comment" for d in comment})
     effect_of.update({id(d): "ask" for d in ask})
@@ -111,6 +143,24 @@ def decide_all(entries: list[dict], board: list[dict]) -> list[dict]:
             }
         )
     return out
+
+
+def save_decisions(raw: dict) -> None:
+    """Persist what the agent actually said, so calibration costs nothing to re-ask."""
+    DECISIONS_PATH.write_text(
+        json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    n = sum(len(v["decisions"]) for v in raw.values())
+    print(f"written: evals/{DECISIONS_PATH.name} ({n} raw decisions)")
+
+
+def load_decisions() -> dict:
+    if not DECISIONS_PATH.exists():
+        raise SystemExit(
+            f"no saved decisions at evals/{DECISIONS_PATH.name} — run the eval once "
+            "without --replay/--sweep to populate it"
+        )
+    return json.loads(DECISIONS_PATH.read_text(encoding="utf-8"))
 
 
 def score(entries: list[dict], decided: list[dict]) -> dict:
@@ -245,16 +295,71 @@ def report(results: list[dict], board_override: str | None) -> str:
     return "\n".join(lines)
 
 
+def sweep_report(sets: list[dict], cache: dict, thresholds: list[float]) -> str:
+    """Effect accuracy as a function of the confidence gate, from saved decisions.
+
+    Costs nothing: every row re-reads the same replies at a different threshold.
+    """
+    lines = [
+        f"# Threshold sweep — {date.today().isoformat()}",
+        "",
+        "Effect accuracy as a function of the confidence gate, recomputed from the saved "
+        f"decisions in `evals/{DECISIONS_PATH.name}`. No model was called: every row is the "
+        "same set of replies scored at a different threshold.",
+        "",
+        "**This cannot tell you where to set the gate.** It is scored against the same "
+        "labels it would be tuned on, and there is no held-out set — the best row here is "
+        "an upper bound on what a threshold can buy, not a validated setting. What it is "
+        "good for is the shape: whether accuracy is flat (the gate is not the problem) or "
+        "peaked (it is).",
+        "",
+        f"Current gate: **{GATE}**.",
+        "",
+    ]
+    header = "| gate | " + " | ".join(s["label"].split(" — ")[0] for s in sets) + " | overall | escalations |"
+    lines += [header, "|" + "---|" * (len(sets) + 3)]
+
+    for t in thresholds:
+        cells, correct, total, escalated = [], 0, 0, 0
+        for s in sets:
+            decided = effects_from(s["entries"], cache[s["name"]]["decisions"], t)
+            sc = score(s["entries"], decided)
+            cells.append(f"{sc['effect_correct'] / sc['total']:.0%}" if sc["total"] else "—")
+            correct += sc["effect_correct"]
+            total += sc["total"]
+            escalated += sum(1 for d in decided if d["effect"] == "ask")
+        mark = " ←" if abs(t - GATE) < 1e-9 else ""
+        lines.append(
+            f"| {t:.2f}{mark} | " + " | ".join(cells) + f" | **{correct / total:.0%}** | {escalated} |"
+        )
+
+    lines += [
+        "",
+        "Read the escalation column beside the accuracy one. A lower gate buys accuracy by "
+        "sending fewer points to a human, which is only a gain if the extra calls it lets "
+        "through are right. Where accuracy climbs and escalations fall together, the gate "
+        "was costing correct actions; where accuracy climbs only as escalations collapse, "
+        "the gate is doing its job and the number is flattering itself.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def main() -> None:
     args = sys.argv[1:]
     dry_run = "--dry-run" in args
+    sweep = "--sweep" in args
+    replay = "--replay" in args or sweep
     only = None
     board_override = None
+    threshold = GATE
     for i, a in enumerate(args):
         if a.startswith("--only"):
             only = a.split("=", 1)[1] if "=" in a else args[i + 1]
         if a.startswith("--board"):
             board_override = a.split("=", 1)[1] if "=" in a else args[i + 1]
+        if a.startswith("--threshold"):
+            threshold = float(a.split("=", 1)[1] if "=" in a else args[i + 1])
 
     sets = load_sets(only)
     if not sets:
@@ -276,20 +381,54 @@ def main() -> None:
         print(f"model calls that would run: {sum(len(s['entries']) for s in sets)}")
         return
 
+    cache = load_decisions() if replay else {}
+    if replay:
+        missing = [s["name"] for s in sets if s["name"] not in cache]
+        if missing:
+            raise SystemExit(
+                f"no saved decisions for {', '.join(missing)} — run without "
+                "--replay/--sweep to populate them"
+            )
+
+    if sweep:
+        thresholds = [round(0.50 + 0.05 * i, 2) for i in range(10)]
+        SWEEP_PATH.write_text(sweep_report(sets, cache, thresholds), encoding="utf-8")
+        print(f"replayed {sum(len(s['entries']) for s in sets)} decisions at "
+              f"{len(thresholds)} thresholds — no API calls, nothing spent.")
+        print(f"written: evals/{SWEEP_PATH.name}")
+        return
+
     results = []
+    raw: dict[str, dict] = {}
     for s in sets:
-        board = load_board_fixture(board_override or s["board_ref"])
-        print(f"\n=== {s['label']} · board {board_override or s['board_ref']} ({len(board)} tasks) ===")
-        decided = decide_all(s["entries"], board)
+        board_ref = board_override or s["board_ref"]
+        board = load_board_fixture(board_ref)
+        print(f"\n=== {s['label']} · board {board_ref} ({len(board)} tasks) ===")
+        if replay:
+            decisions = cache[s["name"]]["decisions"]
+            print(f"  replaying {len(decisions)} saved decisions at gate {threshold}")
+        else:
+            decisions = decide_raw(s["entries"], board)
+        raw[s["name"]] = dict(board=board_ref, decisions=decisions)
+
+        decided = effects_from(s["entries"], decisions, threshold)
         sc = score(s["entries"], decided)
         acc = sc["effect_correct"] / sc["total"] if sc["total"] else 0.0
         print(f"  effect accuracy {acc:.0%} ({sc['effect_correct']}/{sc['total']})")
         if sc["by_cause"]:
             print(f"  escalations: {sc['by_cause']}")
-        results.append(dict(set=s, score=sc, board_ref=board_override or s["board_ref"]))
+        results.append(dict(set=s, score=sc, board_ref=board_ref))
 
-    (ROOT / "evals" / "effect_results.md").write_text(report(results, board_override), encoding="utf-8")
-    print("\nwritten: evals/effect_results.md")
+    # Only a real run earns the right to overwrite the record. A replay is an
+    # experiment on decisions already made, and must not restate them as new ones.
+    if not replay:
+        save_decisions(raw)
+        (ROOT / "evals" / "effect_results.md").write_text(
+            report(results, board_override), encoding="utf-8"
+        )
+        print("\nwritten: evals/effect_results.md")
+    else:
+        print("\nreplay only — effect_results.md left untouched.")
 
 
 if __name__ == "__main__":
