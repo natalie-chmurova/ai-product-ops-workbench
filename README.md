@@ -113,6 +113,34 @@ four of ten misses the agent decided exactly what the labels expect and escalate
 below the gate), and the decision eval's ten points do not reach two of the rules its own
 prompt now carries.
 
+## The apply gate
+
+The pipeline builds a plan and stops. It writes `outputs/board_plan.md` and never touches
+the tracker. That is a decision, not an unfinished feature, and the numbers above are the
+reason for it.
+
+Applying automatically was rejected on three measured grounds:
+
+- **Effect accuracy on messy input is 50–67%.** That is the rate at which the agent picks
+  the right thing to do with a point. A tracker written to at that rate produces work a
+  human has to audit line by line, which is more expensive than reading the plan.
+- **Two of the five effects do not exist.** `verify_deadline` and `verify_status` (WB-9,
+  WB-18) have no implementation, so every point that needs one currently degrades to a
+  comment. Applying now would silently convert "check this date" into "leave a note".
+- **On a cluttered board the agent aims at the duplicate.** The clutter measurement above
+  is not hypothetical: the live board really did carry three duplicate rows from old test
+  runs, and the agent matched the copy instead of the original. Idempotency protects
+  against applying the same effect twice; it does not protect against applying the
+  correct effect to the wrong task.
+
+And the number is probably generous. These transcripts are the ones the extraction and
+routing rules were derived from — there is no held-out set. On a meeting the rules have
+never seen, effect accuracy should be expected to be lower, not higher. Until a held-out
+transcript exists, 50–67% is a ceiling estimate, not a floor.
+
+The gate reopens when WB-9 and WB-18 land and the effect eval is re-run against a
+transcript that did not shape the rules.
+
 ## Notes
 
 - The demo transcript is **synthetic** — a fictional team and product, safe to share.
