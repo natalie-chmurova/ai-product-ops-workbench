@@ -10,6 +10,11 @@ Because the decision is categorical, it is scored by exact match against a
 labeled ground truth — no LLM judge needed. Runs N times (the model is
 non-deterministic) and averages.
 
+The instruction comes from `prompts/match.md`, the same file `src/reconcile.py`
+and the n8n Match agent node read. This harness used to keep its own copy, which
+drifted: it was still measuring an agent that had never been told a decision is
+an UPDATE, or that work already under way is not a second task.
+
 Metrics:
   decision accuracy = correct NEW/UPDATE calls / total points
   target accuracy   = correct task id / points whose true decision is UPDATE
@@ -33,44 +38,19 @@ from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=ROOT / ".env")
 
-from src.client import ask  # noqa: E402
+from src.client import ask, load_prompt  # noqa: E402
 
 GT = json.loads((ROOT / "evals" / "match_ground_truth.json").read_text(encoding="utf-8"))
 BOARD_TEXT = "\n".join(f"{t['id']} | {t['name']}" for t in GT["board"])
 BOARD_IDS = {t["id"] for t in GT["board"]}
 
-# Same instruction the n8n "Match agent" node uses, kept in sync on purpose.
-MATCH_PROMPT = """You are a board-sync agent. Decide whether a meeting point is NEW work or an
-UPDATE to a task that already exists on the board.
-
-EXISTING TASKS (id | name):
-{board}
-
-MEETING POINT:
-Name: {name}
-Detail: {detail}
-
-Rules:
-- Prefer UPDATE when the point clearly concerns the same work as an existing task, even with
-  different wording.
-- A point describing the RESULT, OUTCOME, or COMPLETION of work (e.g. "X shipped", "the fix
-  went out", "Y is done", "we deployed Z") is an UPDATE to the task that produced it — match it
-  to that task; do not treat a finished outcome as new work.
-- Use NEW only when no existing task reasonably covers it.
-- If you are torn between two tasks or unsure, LOWER your confidence. Never guess silently.
-
-Respond in EXACTLY this format (four lines, nothing else):
-DECISION: <NEW|UPDATE>
-TASK_ID: <existing task id or NONE>
-CONFIDENCE: <0.0-1.0>
-REASON: <one short sentence>
-"""
-
 
 def decide(point: dict) -> tuple[str, str]:
     reply = ask(
         "You are a precise board-sync agent.",
-        MATCH_PROMPT.format(board=BOARD_TEXT, name=point["name"], detail=point["detail"]),
+        load_prompt("match").format(
+            board=BOARD_TEXT, name=point["name"], detail=point["detail"]
+        ),
         max_tokens=400,
     )
     decision = (re.search(r"DECISION:\s*(NEW|UPDATE)", reply, re.I) or [None, "NEW"])[1].upper()

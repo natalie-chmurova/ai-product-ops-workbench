@@ -7,7 +7,10 @@ environment, create one task per item, and report what happened.
 
 from __future__ import annotations
 
+import json
 import os
+from datetime import datetime, timezone
+from pathlib import Path
 
 import requests
 
@@ -56,7 +59,7 @@ def get_lists() -> list[dict]:
 
 
 def get_tasks(list_id: str | None = None, include_closed: bool = False) -> list[dict]:
-    """Read the board: open tasks in a list, as [{id, name, status, assignees}].
+    """Read the board: open tasks in a list, as [{id, name, status, assignees, due_date}].
 
     Until this existed the pipeline could only write. Without reading the board
     first, every meeting point looks like new work — which is how a decision
@@ -79,9 +82,59 @@ def get_tasks(list_id: str | None = None, include_closed: bool = False) -> list[
                 "name": t.get("name", ""),
                 "status": (t.get("status") or {}).get("status", ""),
                 "assignees": [a.get("username", "") for a in t.get("assignees", [])],
+                "due_date": _iso_date(t.get("due_date")),
             }
         )
     return out
+
+
+def _iso_date(raw) -> str:
+    """ClickUp hands over a due date as epoch milliseconds, or null. We want a date.
+
+    A deadline the agent cannot read is a deadline it cannot reason about, which is
+    why "they said Thursday" has so far gone nowhere near the board's own date.
+    """
+    if not raw:
+        return ""
+    try:
+        seconds = int(raw) / 1000
+    except (TypeError, ValueError):
+        return ""
+    return datetime.fromtimestamp(seconds, tz=timezone.utc).date().isoformat()
+
+
+def load_board_fixture(path) -> list[dict]:
+    """Read a board from a file, in the same shape `get_tasks()` returns.
+
+    A fixture is how a transcript gets a board that belongs to its own world. The
+    live board stays the default everywhere; this is opt-in, because a demo that
+    quietly stopped talking to a real tracker would lose the thing worth showing.
+
+    Unlike `get_tasks()`, a bad path raises. An unreadable fixture is a mistake in an
+    argument someone typed, and reconciling against an empty board instead would
+    silently turn every point into new work.
+    """
+    path = Path(path)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise WorkbenchError(f"Board fixture not found: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise WorkbenchError(f"Board fixture is not valid JSON: {path} ({exc})") from exc
+
+    board = []
+    for task in raw.get("tasks", []):
+        board.append(
+            {
+                "id": task.get("id", ""),
+                "name": task.get("name", ""),
+                "status": task.get("status", ""),
+                # list() so two tasks can never share one list of owners
+                "assignees": list(task.get("assignees", [])),
+                "due_date": task.get("due_date", ""),
+            }
+        )
+    return board
 
 
 def add_comment(task_id: str, text: str) -> tuple[bool, str]:

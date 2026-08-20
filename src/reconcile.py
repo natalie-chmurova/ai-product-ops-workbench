@@ -19,8 +19,28 @@ from .client import ask, load_prompt
 
 
 def board_summary(tasks: list[dict]) -> str:
-    """The board as the agent sees it: one `id | name` per line."""
-    return "\n".join(f"{t['id']} | {t.get('name', '')}" for t in tasks)
+    """The board as the agent sees it: id, name, and whatever else the task carries.
+
+    Status, owner and deadline are read from the tracker already — they were simply
+    dropped before the agent ever saw them. That is why "they said it's done" and
+    "that date slipped" had nothing to reason against: the agent cannot check a
+    status it was never shown.
+
+    Empty fields are omitted rather than rendered as "none", so a sparse board stays
+    readable and a board carrying only id and name renders exactly as it used to.
+    """
+    lines = []
+    for t in tasks:
+        parts = [f"{t.get('id', '')} | {t.get('name', '')}"]
+        if t.get("status"):
+            parts.append(f"status: {t['status']}")
+        owners = ", ".join(a for a in t.get("assignees", []) if a)
+        if owners:
+            parts.append(f"owner: {owners}")
+        if t.get("due_date"):
+            parts.append(f"due: {t['due_date']}")
+        lines.append(" | ".join(parts))
+    return "\n".join(lines)
 
 
 def parse_decision(reply: str, board: list[dict]) -> dict:
@@ -29,6 +49,11 @@ def parse_decision(reply: str, board: list[dict]) -> dict:
     A malformed reply defaults to NEW with zero confidence rather than raising:
     an unparseable answer is exactly the case a human should look at, not one
     that should stop the run.
+
+    The two ways this can go wrong are reported as `escalation_cause`, because an
+    escalation caused by a guardrail firing is a different event from one where the
+    agent reached an answer and doubted it — and counted as the same, a broken run
+    scores as a good one.
     """
     decision = (re.search(r"DECISION:\s*(NEW|UPDATE)", reply, re.I) or [None, "NEW"])[1].upper()
     target = (re.search(r"TASK_ID:\s*([A-Za-z0-9]+)", reply, re.I) or [None, ""])[1]
@@ -53,6 +78,16 @@ def parse_decision(reply: str, board: list[dict]) -> dict:
     if unparseable:
         confidence = 0.0
 
+    # An escalation caused by a guardrail firing is not the same event as an agent
+    # that reached an answer and honestly doubted it. Scored as one, a broken run
+    # reads as a good one — so the two failures this function can see are named.
+    if unparseable:
+        cause = "unreadable"
+    elif decision == "UPDATE" and not target:
+        cause = "phantom_target"
+    else:
+        cause = ""
+
     # Escalating without saying why wastes the human's time — they see a question
     # and no reason for it. Always hand over something readable.
     if not reason:
@@ -68,6 +103,7 @@ def parse_decision(reply: str, board: list[dict]) -> dict:
         "target_id": target,
         "confidence": confidence,
         "reason": reason,
+        "escalation_cause": cause,
     }
 
 
@@ -144,6 +180,10 @@ def split_by_confidence(decisions: list[dict], threshold: float = 0.8) -> tuple:
     create, comment, ask = [], [], []
     for d in decisions:
         if d.get("confidence", 0) < threshold:
+            # A guardrail has already said what went wrong; otherwise the agent
+            # simply was not sure, which is the escalation we actually want.
+            if not d.get("escalation_cause"):
+                d["escalation_cause"] = "low_confidence"
             ask.append(d)
         elif d.get("decision") == "UPDATE":
             comment.append(d)
@@ -178,8 +218,10 @@ def plan_markdown(decisions: list[dict], board: list[dict], threshold: float = 0
 
     lines += ["", f"## Ask a human ({len(ask)})", ""]
     for d in ask:
+        cause = d.get("escalation_cause", "")
+        tag = f" `{cause}`" if cause and cause != "low_confidence" else ""
         lines.append(
-            f"- **{d.get('name','')}** (confidence {d.get('confidence',0):.2f}) — {d.get('reason','')}"
+            f"- **{d.get('name','')}**{tag} (confidence {d.get('confidence',0):.2f}) — {d.get('reason','')}"
         )
     if not ask:
         lines.append("- nothing")

@@ -31,7 +31,7 @@ from src.artifacts import (
 )
 from src.assignees import roster_line, team_roster
 from src.client import WorkbenchError
-from src.clickup import get_tasks
+from src.clickup import get_tasks, load_board_fixture
 from src.reconcile import (
     decisions_markdown,
     plan_markdown,
@@ -61,9 +61,16 @@ def _under_cwd(path: Path) -> bool:
         return False
 
 
-def run(transcript_path: Path) -> None:
+def run(transcript_path: Path, board_path: Path | None = None) -> None:
     if not transcript_path.exists():
         raise WorkbenchError(f"File not found: {transcript_path}")
+
+    # Read the fixture before any model call. A mistyped path is a mistake in an
+    # argument, and finding it after two stages of extraction means paying for a run
+    # that was never going to finish.
+    board = load_board_fixture(board_path) if board_path else None
+    if board_path:
+        print(f"Board: fixture {board_path} ({len(board)} tasks)")
 
     if is_audio(transcript_path):
         print("Stage 0/3  Transcribing audio (local, no upload)...")
@@ -90,7 +97,11 @@ def run(transcript_path: Path) -> None:
     _write(OUTPUT_DIR / "bug_triage.md", triage_md)
     _write(OUTPUT_DIR / "speaker_summary.md", speakers_md)
 
-    board = get_tasks()
+    # The live board is the default on purpose: the demo's worth is that it talks to
+    # a real tracker. A fixture is how an eval transcript gets a board from its own
+    # world, and it is always asked for explicitly.
+    if board is None:
+        board = get_tasks()
     if board:
         print(f"Stage 2.5/3  Reconciling against the board ({len(board)} open tasks)...")
         decisions = reconcile(context.get("action_items", []), board)
@@ -114,9 +125,15 @@ def run(transcript_path: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Turn a meeting transcript (or audio recording) into product-ops artifacts.")
     parser.add_argument("transcript", type=Path, help="Path to a transcript .txt or an audio file (.m4a/.mp3/.wav/...)")
+    parser.add_argument(
+        "--board",
+        type=Path,
+        default=None,
+        help="Reconcile against a board fixture file instead of the live ClickUp list",
+    )
     args = parser.parse_args()
     try:
-        run(args.transcript)
+        run(args.transcript, args.board)
     except (WorkbenchError, ValueError) as exc:
         print(f"\nError: {exc}", file=sys.stderr)
         return 1

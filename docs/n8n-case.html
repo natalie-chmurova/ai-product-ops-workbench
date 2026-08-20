@@ -195,15 +195,23 @@
   <table>
     <tr><th>transcript</th><th>recall</th><th>precision</th></tr>
     <tr><td>clean</td><td>100%</td><td>100%</td></tr>
-    <tr><td>messy — reversed decision, ownerless item</td><td>100%</td><td>70%</td></tr>
+    <tr><td>messy — reversed decision, ownerless item</td><td>100%</td><td>70% → 100%</td></tr>
     <tr><td>messy — noise, task raised in passing</td><td>100%</td><td>100%</td></tr>
   </table>
-  <p><b>Precision is now the interesting number, and it is failing for a nameable reason:</b> the
-  pipeline emits four or five tasks where only three are genuinely new. The extras are exactly the
-  items the manager reclassified — it files a decision as work, and re-creates a task that already
-  exists on the board. Which is not a prompt bug: this pipeline never reads the board, so it has no
-  way to know. The n8n workflow does read it, and that split — a board-aware agent next to a
-  board-blind pipeline — is the real finding.</p>
+  <p><b>Precision dropped to 70%, and it failed for a nameable reason:</b> the pipeline emitted four
+  or five tasks where only three were genuinely new. The extras were exactly the items the manager
+  had reclassified — it filed a decision as work, and re-created a task that already existed on the
+  board. That was two problems at once. The extraction prompt allowed a decision to become a task,
+  and fixing that is what brought precision back to 100%. Separately, the Python pipeline could not
+  read the board at all, so it had no way to see what already existed. The n8n workflow could, and
+  that split — a board-aware agent beside a board-blind pipeline — was the second finding. The
+  pipeline now reads the board too; note that the extraction benchmark never sees a board, so that
+  change is not what moved this number.</p>
+  <p><b>Which is exactly where it gets uncomfortable.</b> All three transcripts now score 100/100 —
+  and by the standard set at the top of this section, a benchmark that always reads 100% is measuring
+  nothing again. The honest reading is not "the system is finished" but "this benchmark is spent, and
+  the next real test is a transcript it has never been tuned on". The rules above were derived from
+  these same transcripts; nothing here proves they generalise.</p>
   <p class="foot" style="margin-top:-6px">Note on comparability: earlier runs scored 67–73% recall
   against the assistant's draft labels. Those numbers are not comparable to the ones above — the
   system did not change, the definition of a correct answer did.</p>

@@ -1,0 +1,43 @@
+{
+  "transcript": "samples/transcript_messy_2.txt",
+  "status": "DRAFT — awaiting Natallia's validation",
+  "scenario": "The board before the standup of Mon 2026-08-24 — that is, after the previous week's meeting was processed.",
+  "note": "B5 is the open question for review: the duplicated-notifications item was created unassigned last week, so this week's 'I'll take it after search' may be a comment plus an owner rather than a new task. The ground truth currently labels it must/new.",
+  "tasks": [
+    {
+      "id": "B1",
+      "name": "[Search] Diagnose search relevance ranking on long queries",
+      "status": "in progress",
+      "assignees": ["Marco"],
+      "due_date": "2026-08-20"
+    },
+    {
+      "id": "B2",
+      "name": "[Payments][QA] Regression testing on the payments flow",
+      "status": "in progress",
+      "assignees": ["Sam"],
+      "due_date": "2026-08-19"
+    },
+    {
+      "id": "B3",
+      "name": "[Payments] Wire up tokenization on our side",
+      "status": "to do",
+      "assignees": ["Marco"],
+      "due_date": ""
+    },
+    {
+      "id": "B4",
+      "name": "[Design] Onboarding illustrations",
+      "status": "in progress",
+      "assignees": ["Priya"],
+      "due_date": ""
+    },
+    {
+      "id": "B5",
+      "name": "[Notifications] Investigate duplicated push notifications",
+      "status": "to do",
+      "assignees": [],
+      "due_date": ""
+    }
+  ]
+}

@@ -6,70 +6,93 @@
       "id": "gt1",
       "summary": "Chase the payment provider about sandbox rejecting test tokens (saved cards blocked)",
       "owner_hint": "Marco",
-      "must": true
+      "must": true,
+      "expected_effect": "comment",
+      "expected_target": "86eyay0p7"
     },
     {
       "id": "gt2",
       "summary": "Finalize and hand off payment error-state designs (card declined / expired / network) in Figma",
       "owner_hint": "Priya",
-      "must": true
+      "must": true,
+      "expected_effect": "comment",
+      "expected_target": "86ey9z6qq"
     },
     {
       "id": "gt3",
       "summary": "Implement / wire up the new payment error states in checkout",
       "owner_hint": "Marco",
-      "must": true
+      "must": true,
+      "expected_effect": "comment",
+      "expected_target": "86ey9z6qj"
     },
     {
       "id": "gt4",
       "summary": "Get payment decline error copy reviewed by legal (compliance wording)",
       "owner_hint": "Priya",
-      "must": true
+      "must": true,
+      "expected_effect": "comment",
+      "expected_target": "86ey9z6r6"
     },
     {
       "id": "gt5",
       "summary": "Fix Android crash on product detail screen when a product has no images (placeholder in carousel)",
       "owner_hint": "Alex",
-      "must": true
+      "must": true,
+      "expected_effect": "comment",
+      "expected_target": "86ey9z6rc"
     },
     {
       "id": "gt6",
       "summary": "Write regression tests for the empty-images path and re-run the carousel suite",
       "owner_hint": "Sam",
-      "must": true
+      "must": true,
+      "expected_effect": "create",
+      "review_note": "DECIDED by Natallia, 2026-08-18. Create, confirmed. The row that resembled it (86eyay0kt) was a third copy of the crash fix and was removed as a duplicate, so the clean board carries no regression task."
     },
     {
       "id": "gt7",
       "summary": "Raise Android test-device budget (device farm or more phones) with finance",
       "owner_hint": "Dana",
-      "must": true
+      "must": true,
+      "expected_effect": "comment",
+      "review_note": "DECIDED by Natallia, 2026-08-18. Comment. The board already carries the approval this request was asking for, so a new task would ask for something already granted. NOTE: the match prompt's outcome rule does NOT cover this — that rule is about a point describing the result of a task on the board, and here it is mirrored: the board holds the result and the point is the request. The governing rule — 'a request the board shows as already satisfied is a comment' — is not in the SOP yet.",
+      "expected_target": "86eybqz2k"
     },
     {
       "id": "gt8",
       "summary": "Instrument checkout funnel analytics this sprint, right after the crash fix",
       "owner_hint": "Marco",
-      "must": true
+      "must": true,
+      "expected_effect": "create"
     },
     {
       "id": "gt9",
       "summary": "Fix search zero-results infinite spinner (show a no-results message)",
       "owner_hint": "Marco",
       "must": false,
-      "why_debatable": "Marco said he'd fold it into the error-states work — a separate task or part of gt3 are both defensible."
+      "why_debatable": "Marco said he'd fold it into the error-states work — a separate task or part of gt3 are both defensible.",
+      "expected_effect": "create"
     },
     {
       "id": "gt10",
       "summary": "Write up the seller photo-nudge idea as product work for a future sprint",
       "owner_hint": "Dana",
       "must": false,
-      "why_debatable": "Explicitly 'not this sprint' — a backlog note or a task are both defensible."
+      "why_debatable": "Explicitly 'not this sprint' — a backlog note or a task are both defensible.",
+      "expected_effect": "create"
     },
     {
       "id": "gt11",
       "summary": "Ship/prepare checkout release without saved cards (saved cards as fast-follow, keep out of release notes)",
       "owner_hint": "Dana/Marco",
       "must": false,
-      "why_debatable": "This is a decision more than a task; a release-prep task is a reasonable materialization."
+      "why_debatable": "This is a decision more than a task; a release-prep task is a reasonable materialization.",
+      "expected_effect": "comment",
+      "expected_target": "86ey9z6qa"
     }
-  ]
+  ],
+  "board": "evals/board_demo.json",
+  "labels_status": "expected_effect VALIDATED by Natallia (18 Aug 2026)",
+  "board_note": "The demo fixture is the re-processing case, so an item already on the board expects a comment rather than a create. Note the board has moved one meeting ahead: two of its tasks come from the follow-up sync, not from this meeting."
 }

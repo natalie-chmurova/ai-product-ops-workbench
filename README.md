@@ -78,14 +78,72 @@ src/
   extract.py        stage 1 — transcript → structured summary
   artifacts.py      stage 2 — summary → tasks / sprint / bug triage / per-speaker
   render.py         stage 3 — artifacts → report.html
+  reconcile.py      stage 1.5 — check each point against the board before acting
+  clickup.py        reads the board and writes to it
 prompts/            the instructions for each stage (Markdown)
-samples/            a synthetic demo transcript (no real/sensitive data)
+samples/            synthetic demo transcripts (no real/sensitive data)
+evals/              the three eval harnesses, their labels and their results
 outputs/            generated artifacts (git-ignored)
 ```
+
+## Measuring it
+
+Three harnesses, each answering a different question. All of them run against labels a
+delivery manager validated by hand, and all of them are allowed to fail.
+
+| harness | question | latest |
+|---|---|---|
+| `evals/run_eval.py` | was the work found? | recall 100%, precision 100% on three transcripts |
+| `evals/eval_decisions.py` | new work or an update to something that exists? | 100% decision, 100% target |
+| `evals/eval_effects.py` | what should actually happen to the board? | 64% / 67% / 50% |
+
+The third is new and deliberately red. Two of the five effects it scores —
+`verify_deadline` and `verify_status` — have no implementation at all, so they report
+zero on purpose: the metric exists before the feature, so the feature has something to
+move.
+
+It also measures what a messy board costs. On the same transcript with the same labels,
+a board carrying three duplicate tasks left by old test runs scores **55%** against
+**64%** for the same board with the duplicates removed — and the failure is legible:
+the agent matches the copy instead of the original and escalates rather than acting.
+
+Two honest caveats, both written into the results files rather than left to be
+discovered: effect accuracy folds judgement together with confidence calibration (in
+four of ten misses the agent decided exactly what the labels expect and escalated anyway,
+below the gate), and the decision eval's ten points do not reach two of the rules its own
+prompt now carries.
+
+## The apply gate
+
+The pipeline builds a plan and stops. It writes `outputs/board_plan.md` and never touches
+the tracker. That is a decision, not an unfinished feature, and the numbers above are the
+reason for it.
+
+Applying automatically was rejected on three measured grounds:
+
+- **Effect accuracy on messy input is 50–67%.** That is the rate at which the agent picks
+  the right thing to do with a point. A tracker written to at that rate produces work a
+  human has to audit line by line, which is more expensive than reading the plan.
+- **Two of the five effects do not exist.** `verify_deadline` and `verify_status` (WB-9,
+  WB-18) have no implementation, so every point that needs one currently degrades to a
+  comment. Applying now would silently convert "check this date" into "leave a note".
+- **On a cluttered board the agent aims at the duplicate.** The clutter measurement above
+  is not hypothetical: the live board really did carry three duplicate rows from old test
+  runs, and the agent matched the copy instead of the original. Idempotency protects
+  against applying the same effect twice; it does not protect against applying the
+  correct effect to the wrong task.
+
+And the number is probably generous. These transcripts are the ones the extraction and
+routing rules were derived from — there is no held-out set. On a meeting the rules have
+never seen, effect accuracy should be expected to be lower, not higher. Until a held-out
+transcript exists, 50–67% is a ceiling estimate, not a floor.
+
+The gate reopens when WB-9 and WB-18 land and the effect eval is re-run against a
+transcript that did not shape the rules.
 
 ## Notes
 
 - The demo transcript is **synthetic** — a fictional team and product, safe to share.
 - Task descriptions follow a real ClickUp ticket structure
-  (Цель / Контекст / Что нужно сделать / Критерии приемки).
+  (Goal / Context / What needs to be done / Acceptance criteria).
 - Built as a portfolio project demonstrating AI-assisted product operations.
