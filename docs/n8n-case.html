@@ -174,7 +174,7 @@
   which is exactly what routes the ambiguous calls to Telegram.</p>
 
   <h2>Evals — measured, not vibes-checked</h2>
-  <p>Two harnesses (<a href="https://github.com/natalie-chmurova/ai-product-ops-workbench/tree/main/evals">evals/</a>):</p>
+  <p>Three harnesses (<a href="https://github.com/natalie-chmurova/ai-product-ops-workbench/tree/main/evals">evals/</a>), each answering a different question, and each allowed to fail:</p>
   <p><b>Extraction quality</b> — labeled ground-truth transcripts scored by an <b>LLM-as-judge</b>
   for precision/recall, 3 runs each. On the clean, well-structured transcript it scores
   <b>100% / 100%</b> — which, on its own, is weak evidence. So the benchmark now also includes
@@ -255,6 +255,28 @@
   <code>owner = "Marco"</code> created a ClickUp task assigned to a real user id. The resolver is a
   tested Python module (<code>src/assignees.py</code>), and the map is <b>config-driven</b> — real
   teammates in production, a single account in the demo workspace.</p>
+
+  <h2>The apply gate — what it deliberately will not do</h2>
+  <p>The pipeline builds a plan and stops. It writes the plan to a file and never touches the
+  tracker. That is a decision with a measured basis, not an unfinished feature.</p>
+  <p>A third harness scores what <i>should</i> happen to each point — create, comment, escalate,
+  plus two effects that are not built yet. It reads <b>50–67%</b>, and the shape of the ten misses
+  matters more than the headline:</p>
+  <table>
+    <tr><th>bucket</th><th>misses</th></tr>
+    <tr><td>calibration — chose what the labels expect, escalated anyway below the 0.8 gate</td><td>4</td></tr>
+    <tr><td>no mechanism — a deadline/status check with nothing to express it; each still commented on the <b>right</b> task</td><td>3</td></tr>
+    <tr><td>judgement — genuinely matched the wrong thing</td><td>3</td></tr>
+  </table>
+  <p>So <b>three of ten are real errors of judgement.</b> Counting intent rather than the gated
+  outcome, the same runs read <b>82% / 83% / 63%</b>. Neither figure is honest alone — quoting only
+  the low one understates the agent as badly as quoting only the high one would flatter it.</p>
+  <p><b>The gate stays shut because the two kinds of miss fail differently.</b> A calibration miss
+  is safe: it escalates to a human. A judgement miss is not: it acts confidently on the wrong task.
+  And on a cluttered board the agent aims at the duplicate — idempotency stops the same effect being
+  applied twice, it does not stop the correct effect landing in the wrong place. The number is also
+  a ceiling rather than a floor: these are the transcripts the rules were derived from, with no
+  held-out set, so a meeting the rules have never seen should be expected to score lower.</p>
 
   <div class="links">
     <a href="https://github.com/natalie-chmurova/ai-product-ops-workbench">← Code &amp; repo</a>
