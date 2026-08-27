@@ -56,7 +56,7 @@ Do this first and finish it — including the re-measurement — before Task 2 c
 - [ ] **Step 1: Confirm the drift is real before changing anything**
 
 ```bash
-cd "/Users/nchmurova/Job Search/ai-product-ops-workbench"
+cd ~/Workbench
 diff <(sed -n '43,67p' evals/eval_decisions.py) prompts/match.md
 ```
 

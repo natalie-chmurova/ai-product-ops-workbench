@@ -503,7 +503,7 @@ pkill -f "n8n" ; sleep 2 ; echo "stopped"
 - [ ] **Step 2: Export the live workflow**
 
 ```bash
-cd ~/"Job Search/ai-product-ops-workbench"
+cd ~/Workbench
 npx n8n export:workflow --id=SyncMeetingCU001 --output=/tmp/sync_export.json
 ```
 Expected: `Successfully exported 1 workflow.`
@@ -651,7 +651,7 @@ Expected: `Successfully imported 1 workflow.`
 - [ ] **Step 6: Start n8n with both builtins allowed**
 
 ```bash
-cd ~/"Job Search/ai-product-ops-workbench"
+cd ~/Workbench
 NODE_FUNCTION_ALLOW_BUILTIN=fs,crypto N8N_DIAGNOSTICS_ENABLED=false npx n8n start >/tmp/n8n.log 2>&1 &
 sleep 25 ; grep -i "editor is now accessible" /tmp/n8n.log || tail -5 /tmp/n8n.log
 ```
