@@ -62,6 +62,7 @@ environment on first run and launches the app.
 ```bash
 python workbench.py samples/transcript_demo.txt   # a transcript...
 python workbench.py samples/meeting_demo.m4a       # ...or an audio recording
+python workbench.py samples/meeting_demo_full.m4a  # ...or the full 4-minute one
 open outputs/report.html      # macOS ("xdg-open" on Linux)
 ```
 
