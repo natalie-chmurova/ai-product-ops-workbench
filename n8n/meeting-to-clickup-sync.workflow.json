@@ -405,7 +405,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const fs = require('fs');\nconst j = $json;\nconst entry = {\n  ts: new Date().toISOString(),\n  point: j.name,\n  decision: j.is_update ? 'UPDATE' : 'NEW',\n  target: j.target_id || null,\n  confidence: j.confidence,\n  reason: j.reason,\n  gate: (j.confidence >= 0.8) ? 'auto' : 'human',\n  idem_key: j.idem_key || null,\n  duplicate: !!j.is_duplicate\n};\nfs.appendFileSync('/Users/nchmurova/Job Search/ai-product-ops-workbench/evals/decision_log.jsonl', JSON.stringify(entry) + '\\n');\nreturn { json: j };"
+        "jsCode": "const base = $env.WB_HOME;\nif (!base) throw new Error('Set WB_HOME to the checkout path of ai-product-ops-workbench (see n8n/README.md).');\nconst fs = require('fs');\nconst j = $json;\nconst entry = {\n  ts: new Date().toISOString(),\n  point: j.name,\n  decision: j.is_update ? 'UPDATE' : 'NEW',\n  target: j.target_id || null,\n  confidence: j.confidence,\n  reason: j.reason,\n  gate: (j.confidence >= 0.8) ? 'auto' : 'human',\n  idem_key: j.idem_key || null,\n  duplicate: !!j.is_duplicate\n};\nfs.appendFileSync(base + '/evals/decision_log.jsonl', JSON.stringify(entry) + '\\n');\nreturn { json: j };"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
