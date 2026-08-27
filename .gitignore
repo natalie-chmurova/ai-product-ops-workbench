@@ -8,3 +8,11 @@ state/processed_effects.jsonl
 
 # streamlit secrets, if used
 .streamlit/secrets.toml
+
+# local helper scripts, tied to this machine (start.command is tracked, and stays)
+start-n8n.command
+cleanup-demo.command
+cleanup_demo_comments.py
+
+# Russian-language planning notes, kept out of the public repo
+N8N_AGENTIC_PLAN_RU.md
