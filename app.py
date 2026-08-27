@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import html
 import os
+import time
 from pathlib import Path
 
 import streamlit as st
@@ -181,12 +182,13 @@ def render_clickup(tasks: list) -> None:
             labels = [f"{l['space']} / {l['name']}" for l in lists]
             ids = [l["id"] for l in lists]
             idx = ids.index(default_id) if default_id in ids else 0
-            choice = c1.selectbox("ClickUp list", labels, index=idx, label_visibility="collapsed")
+            choice = c1.selectbox("ClickUp list", labels, index=idx, label_visibility="collapsed",
+                                  key="clickup_list")
             target = ids[labels.index(choice)]
         else:
             target = default_id
             c1.caption("Sending to the default list from .env")
-        send = c2.button("📤 Send to ClickUp", use_container_width=True)
+        send = c2.button("📤 Send to ClickUp", use_container_width=True, key="send_clickup")
         if send:
             try:
                 with st.spinner("Creating tasks in ClickUp…"):
@@ -243,8 +245,9 @@ with left:
         height=400,
     )
     col_a, col_b = st.columns([1, 1])
-    run = col_a.button("✨ Generate artifacts", type="primary", use_container_width=True)
-    if col_b.button("↺ Reset to demo", use_container_width=True):
+    run = col_a.button("✨ Generate artifacts", type="primary", use_container_width=True,
+                       key="generate")
+    if col_b.button("↺ Reset to demo", use_container_width=True, key="reset_demo"):
         st.session_state.pop("tx_key", None)
         st.session_state.pop("tx_text", None)
         st.rerun()
@@ -256,6 +259,7 @@ with right:
 
     if run:
         try:
+            started = time.monotonic()
             with st.status("Working through the transcript...", expanded=True) as status:
                 roster = team_roster()
                 if roster:
@@ -267,11 +271,12 @@ with right:
                 sprint_md = build_sprint_summary(context)
                 triage_md = build_bug_triage(context)
                 speakers_md = build_speaker_summary(context, transcript, roster)
-                st.write("Stage 3/3 — done")
-                status.update(label="Done ✓", state="complete", expanded=False)
+                elapsed = time.monotonic() - started
+                st.write(f"Stage 3/3 — done in {elapsed:.0f}s")
+                status.update(label=f"Done ✓ · {elapsed:.0f}s", state="complete", expanded=False)
             st.session_state["result"] = {
                 "context": context, "tasks": tasks, "sprint": sprint_md, "triage": triage_md,
-                "speakers": speakers_md,
+                "speakers": speakers_md, "elapsed": elapsed,
             }
         except (WorkbenchError, ValueError) as exc:
             st.session_state["result"] = None
