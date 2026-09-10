@@ -97,16 +97,22 @@ def get_tasks(list_id: str | None = None, include_closed: bool = False) -> list[
         data = r.json()
         tasks = data.get("tasks", [])
         out.extend(_task_row(t) for t in tasks)
+        # Checked here, inside the loop, right after each page is added — not after
+        # the loop breaks. A page sequence that never reports last_page (or keeps
+        # repeating the same non-empty page) never breaks the loop on its own, so
+        # this is what actually bounds it. Once we're over the ceiling the true
+        # total can only be larger, so stopping now is strictly safer than reading
+        # on to find an exact count.
+        if len(out) > MAX_BOARD:
+            raise WorkbenchError(
+                f"The board has at least {len(out)} open tasks; the ceiling is {MAX_BOARD}. "
+                "Every meeting item is matched against the whole board in its own model call, "
+                "so this run would be slow and expensive. Narrow the list, or raise MAX_BOARD "
+                "in src/clickup.py once you have measured what it costs."
+            )
         if data.get("last_page", True) or not tasks:
             break
         page += 1
-    if len(out) > MAX_BOARD:
-        raise WorkbenchError(
-            f"The board has {len(out)} open tasks; the ceiling is {MAX_BOARD}. "
-            "Every meeting item is matched against the whole board in its own model call, "
-            "so this run would be slow and expensive. Narrow the list, or raise MAX_BOARD "
-            "in src/clickup.py once you have measured what it costs."
-        )
     return out
 
 

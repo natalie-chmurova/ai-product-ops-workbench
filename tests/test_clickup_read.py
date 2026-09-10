@@ -82,6 +82,29 @@ def test_task_row_keeps_the_board_shape():
                    "assignees": ["Dana"], "due_date": "2026-08-19"}
 
 
+def test_a_repeating_page_response_does_not_loop_forever(monkeypatch):
+    # A malformed "repeating page" response keeps last_page False with non-empty
+    # tasks on every call. The ceiling must be enforced inside the loop, or this
+    # hangs forever issuing HTTP calls. Bound our own exposure: fail the test with
+    # an AssertionError (not a hang) if get_tasks calls requests.get more than 50
+    # times without stopping.
+    monkeypatch.setenv("CLICKUP_API_TOKEN", "pk_test")
+    page = {"tasks": [_task(i) for i in range(50)], "last_page": False}
+    calls = {"n": 0}
+
+    def fake_get(url, params=None, **kwargs):
+        calls["n"] += 1
+        if calls["n"] > 50:
+            raise AssertionError(
+                "get_tasks did not stop paging a repeating response within 50 calls"
+            )
+        return FakeResponse(200, page)
+
+    monkeypatch.setattr(clickup.requests, "get", fake_get)
+    with pytest.raises(WorkbenchError):
+        clickup.get_tasks("123")
+
+
 def test_a_board_over_the_ceiling_raises_naming_the_count(monkeypatch):
     monkeypatch.setenv("CLICKUP_API_TOKEN", "pk_test")
     total = clickup.MAX_BOARD + 1

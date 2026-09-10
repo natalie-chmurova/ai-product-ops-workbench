@@ -70,9 +70,15 @@ def run(transcript_path: Path, board_path: Path | None = None) -> None:
     # token that has expired are both mistakes in the setup, and finding either after
     # two stages of extraction means paying for a run that was never going to finish.
     board = load_board_fixture(board_path) if board_path else get_tasks()
+    # Computed once, here, and reused at the reconcile stage below — a board fixture
+    # path and a configured CLICKUP_LIST_ID both count as "configured"; get_tasks()
+    # and load_board_fixture() both represent "configured but empty" the same way a
+    # missing configuration is represented ([]), so this is the one place that still
+    # knows the difference.
+    board_configured = bool(board_path) or bool(os.environ.get("CLICKUP_LIST_ID"))
     if board_path:
         print(f"Board: fixture {board_path} ({len(board)} tasks)")
-    elif not os.environ.get("CLICKUP_LIST_ID"):
+    elif not board_configured:
         print("Board: none configured — every point will count as new")
     else:
         # A configured list that is empty is not the same fact as no list at all, and
@@ -118,6 +124,11 @@ def run(transcript_path: Path, board_path: Path | None = None) -> None:
         _write(OUTPUT_DIR / "board_plan.md", plan)
         print(f"  create {len(create)} · comment on existing {len(comment)} · ask a human {len(ask)}")
         print(f"  decisions: {len(decided)} (comment on existing work, never new tasks)")
+    elif board_configured:
+        # board is [] here but a fixture or list *was* configured — "not configured"
+        # would be false, and the earlier "Board: ... empty" line would otherwise be
+        # contradicted a few lines later.
+        print("Stage 2.5/3  Board configured but empty — every point counts as new.")
     else:
         print("Stage 2.5/3  No board configured — every point counts as new.")
 
