@@ -101,7 +101,11 @@ def apply_plan(
     # has none — and it never reaches the key, so the fallback cannot cause a second
     # comment tomorrow.
     when = when or date.today().isoformat()
-    members, aliases, backlog_id = push_context()
+    # The plan was reconciled against exactly one list, list_id, so every create is
+    # written there — never to a second, separately-configured backlog list. Discard the
+    # backlog id from push_context; a backlog-destined task still gets its "backlog" tag
+    # from push_one, it just never leaves the list this run belongs to.
+    members, aliases, _backlog_id = push_context()
 
     summary = {
         "created": 0, "commented": 0, "skipped": 0, "assigned": 0, "backlog": 0,
@@ -114,7 +118,7 @@ def apply_plan(
             summary["skipped"] += 1
             continue
         store.mark_seen(key)
-        res = push_one(task, list_id, members, aliases, backlog_id)
+        res = push_one(task, list_id, members, aliases, None)
         if res["ok"]:
             store.commit(key, {"kind": "NEW", "target": None,
                                "preview": task.get("name", "")[:60], "ts": _now(), "source": "app"})

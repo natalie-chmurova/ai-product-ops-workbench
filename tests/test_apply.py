@@ -49,6 +49,25 @@ def test_the_second_click_applies_nothing(monkeypatch, tmp_path):
     assert again["skipped"] == 2 and again["created"] == 0 and again["commented"] == 0
 
 
+def test_a_backlog_create_still_goes_to_the_scope_list(monkeypatch, tmp_path):
+    # One scope per run: a plan reconciled against list1 must be impossible to write to a
+    # second list, even for a bug/backlog-destined create. push_one must receive the scope
+    # list id and no backlog id, so it keeps the create on list1 and only tags it "backlog".
+    received = []
+    monkeypatch.setattr(apply, "push_context", lambda: ([], {}, "backlog-list"))
+    monkeypatch.setattr(
+        apply, "push_one",
+        lambda task, list_id, members, aliases, backlog_id: (
+            received.append((list_id, backlog_id)) or
+            {"ok": True, "info": task["name"], "assigned": False, "backlog": True}
+        ),
+    )
+    store = IdempotencyStore(tmp_path / "s.jsonl")
+    backlog_create = [{"name": "x", "destination": "backlog"}]
+    apply.apply_plan(backlog_create, [], "list1", store, when="2026-09-09")
+    assert received == [("list1", None)]
+
+
 def test_a_failed_effect_keeps_no_key_so_it_can_be_retried(monkeypatch, tmp_path):
     _wire(monkeypatch, create_ok=False)
     store = IdempotencyStore(tmp_path / "s.jsonl")
