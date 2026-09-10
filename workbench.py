@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -65,12 +66,20 @@ def run(transcript_path: Path, board_path: Path | None = None) -> None:
     if not transcript_path.exists():
         raise WorkbenchError(f"File not found: {transcript_path}")
 
-    # Read the fixture before any model call. A mistyped path is a mistake in an
-    # argument, and finding it after two stages of extraction means paying for a run
-    # that was never going to finish.
-    board = load_board_fixture(board_path) if board_path else None
+    # The board is read before any model call — a fixture path that is mistyped and a
+    # token that has expired are both mistakes in the setup, and finding either after
+    # two stages of extraction means paying for a run that was never going to finish.
+    board = load_board_fixture(board_path) if board_path else get_tasks()
     if board_path:
         print(f"Board: fixture {board_path} ({len(board)} tasks)")
+    elif not os.environ.get("CLICKUP_LIST_ID"):
+        print("Board: none configured — every point will count as new")
+    else:
+        # A configured list that is empty is not the same fact as no list at all, and
+        # get_tasks returns [] for both. The caller knows which, because it knows
+        # whether a list was configured; say the one that is true.
+        print(f"Board: live ClickUp list ({len(board)} open tasks)"
+              + ("" if board else " — empty, so every point counts as new"))
 
     if is_audio(transcript_path):
         print("Stage 0/3  Transcribing audio (local, no upload)...")
@@ -100,8 +109,6 @@ def run(transcript_path: Path, board_path: Path | None = None) -> None:
     # The live board is the default on purpose: the demo's worth is that it talks to
     # a real tracker. A fixture is how an eval transcript gets a board from its own
     # world, and it is always asked for explicitly.
-    if board is None:
-        board = get_tasks()
     if board:
         print(f"Stage 2.5/3  Reconciling against the board ({len(board)} open tasks)...")
         decisions = reconcile(context.get("action_items", []), board)

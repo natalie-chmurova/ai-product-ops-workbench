@@ -18,6 +18,11 @@ from .client import WorkbenchError
 
 API = "https://api.clickup.com/api/v2"
 
+# One model call is made per meeting item, and every one of those calls carries the
+# whole board. Cost grows as items x board size, so a board this large stops the
+# read instead of quietly running up a bill.
+MAX_BOARD = 200
+
 
 def _token() -> str:
     token = os.environ.get("CLICKUP_API_TOKEN")
@@ -61,31 +66,59 @@ def get_lists() -> list[dict]:
 def get_tasks(list_id: str | None = None, include_closed: bool = False) -> list[dict]:
     """Read the board: open tasks in a list, as [{id, name, status, assignees, due_date}].
 
-    Until this existed the pipeline could only write. Without reading the board
-    first, every meeting point looks like new work — which is how a decision
-    turns into a task and work already in progress turns into a duplicate.
-    Returns [] rather than raising when nothing is configured, so callers can
-    degrade to board-blind behaviour instead of failing.
+    Two different absences, kept apart on purpose:
+    - no list id configured -> [] — board-blind mode, and the callers say so out loud;
+    - configured but failing -> WorkbenchError. A board that reads as empty because a
+      token expired would turn every meeting point into new work, silently, which is
+      the exact failure the whole reconcile stage exists to prevent.
+
+    ClickUp hands tasks over a page at a time; every page is read.
     """
     list_id = list_id or os.environ.get("CLICKUP_LIST_ID")
     if not list_id:
         return []
-    params = "include_closed=true" if include_closed else "include_closed=false"
-    r = requests.get(f"{API}/list/{list_id}/task?{params}", headers=_headers(), timeout=20)
-    if r.status_code != 200:
-        return []
-    out = []
-    for t in r.json().get("tasks", []):
-        out.append(
-            {
-                "id": t.get("id", ""),
-                "name": t.get("name", ""),
-                "status": (t.get("status") or {}).get("status", ""),
-                "assignees": [a.get("username", "") for a in t.get("assignees", [])],
-                "due_date": _iso_date(t.get("due_date")),
-            }
+    out: list[dict] = []
+    page = 0
+    while True:
+        try:
+            r = requests.get(
+                f"{API}/list/{list_id}/task",
+                params={"include_closed": "true" if include_closed else "false", "page": page},
+                headers=_headers(),
+                timeout=20,
+            )
+        except requests.RequestException as exc:
+            raise WorkbenchError(f"Could not reach ClickUp to read the board: {exc}") from exc
+        if r.status_code != 200:
+            raise WorkbenchError(
+                f"Could not read the ClickUp board (HTTP {r.status_code}): {r.text[:120]}\n"
+                "  Check CLICKUP_API_TOKEN and CLICKUP_LIST_ID in your .env."
+            )
+        data = r.json()
+        tasks = data.get("tasks", [])
+        out.extend(_task_row(t) for t in tasks)
+        if data.get("last_page", True) or not tasks:
+            break
+        page += 1
+    if len(out) > MAX_BOARD:
+        raise WorkbenchError(
+            f"The board has {len(out)} open tasks; the ceiling is {MAX_BOARD}. "
+            "Every meeting item is matched against the whole board in its own model call, "
+            "so this run would be slow and expensive. Narrow the list, or raise MAX_BOARD "
+            "in src/clickup.py once you have measured what it costs."
         )
     return out
+
+
+def _task_row(t: dict) -> dict:
+    """One ClickUp task -> the board row every consumer expects."""
+    return {
+        "id": t.get("id", ""),
+        "name": t.get("name", ""),
+        "status": (t.get("status") or {}).get("status", ""),
+        "assignees": [a.get("username", "") for a in t.get("assignees", [])],
+        "due_date": _iso_date(t.get("due_date")),
+    }
 
 
 def _iso_date(raw) -> str:
