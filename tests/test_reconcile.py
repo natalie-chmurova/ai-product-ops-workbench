@@ -162,3 +162,16 @@ def test_one_gate_everywhere():
     assert eval_gate == GATE == 0.8
     for fn in (split_by_confidence, plan_markdown, decisions_markdown):
         assert inspect.signature(fn).parameters["threshold"].default == GATE
+
+
+def test_reconcile_accepts_a_generated_task():
+    # The plan is about what gets created — a ClickUp-ready task — so both the CLI and
+    # the app reconcile tasks, not raw action items. A task carries name/description.
+    task = {"name": "[Search][Dev] Diagnose ranking", "description": "Goal:\nfind out",
+            "owner": "Marco", "priority": 1, "tags": ["search"], "type": "bug",
+            "destination": "sprint"}
+    out = reconcile([task], [])  # empty board -> no model call
+    assert out[0]["name"] == task["name"]
+    assert out[0]["detail"] == task["description"]
+    assert out[0]["decision"] == "NEW"
+    assert out[0]["type"] == "bug" and out[0]["destination"] == "sprint"

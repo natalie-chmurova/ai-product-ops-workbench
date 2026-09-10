@@ -13,6 +13,7 @@ from __future__ import annotations
 import html
 import os
 import time
+from datetime import date
 from pathlib import Path
 
 import streamlit as st
@@ -25,9 +26,10 @@ from src.artifacts import (
     build_tasks,
 )
 from src.assignees import roster_line, team_roster
-from src.clickup import get_lists, push_tasks
+from src.clickup import get_lists, get_tasks
 from src.client import WorkbenchError
 from src.extract import extract_context
+from src.reconcile import decisions_markdown, plan_markdown, reconcile, reconcile_decisions
 
 load_dotenv()
 
@@ -170,44 +172,6 @@ def _cached_lists() -> list:
         return []
 
 
-def render_clickup(tasks: list) -> None:
-    """A row that pushes the generated tasks into a real ClickUp list."""
-    if not os.environ.get("CLICKUP_API_TOKEN"):
-        return  # integration not configured — hide the control entirely
-    lists = _cached_lists()
-    default_id = os.environ.get("CLICKUP_LIST_ID", "")
-    with st.container(border=True):
-        c1, c2 = st.columns([2, 1])
-        if lists:
-            labels = [f"{l['space']} / {l['name']}" for l in lists]
-            ids = [l["id"] for l in lists]
-            idx = ids.index(default_id) if default_id in ids else 0
-            choice = c1.selectbox("ClickUp list", labels, index=idx, label_visibility="collapsed",
-                                  key="clickup_list")
-            target = ids[labels.index(choice)]
-        else:
-            target = default_id
-            c1.caption("Sending to the default list from .env")
-        send = c2.button("📤 Send to ClickUp", use_container_width=True, key="send_clickup")
-        if send:
-            try:
-                with st.spinner("Creating tasks in ClickUp…"):
-                    summary = push_tasks(tasks, target)
-                if summary["created"]:
-                    st.success(
-                        f"Created {summary['created']} of {summary['total']} tasks in ClickUp"
-                        f" · {summary.get('assigned', 0)} assigned to an owner."
-                    )
-                    st.markdown(f"➡️ [Open the ClickUp board]({summary['list_url']})")
-                if summary["failed"]:
-                    st.warning(
-                        f"{len(summary['failed'])} task(s) didn't go through: "
-                        + "; ".join(summary["failed"][:3])
-                    )
-            except (WorkbenchError, ValueError) as exc:
-                st.error(str(exc))
-
-
 # ---------- input ----------
 left, right = st.columns([1, 1.35], gap="large")
 
@@ -244,6 +208,30 @@ with left:
         value=default_text,
         height=400,
     )
+
+    # The board this plan is built against is the board it will be applied to. Choosing
+    # the list afterwards is how a plan reconciled against one board gets written to
+    # another — which is precisely the duplicate the reconcile stage exists to prevent.
+    lists = _cached_lists() if os.environ.get("CLICKUP_API_TOKEN") else []
+    default_id = os.environ.get("CLICKUP_LIST_ID", "")
+    c_scope, c_date = st.columns([2, 1])
+    if lists:
+        labels = [f"{l['space']} / {l['name']}" for l in lists]
+        ids = [l["id"] for l in lists]
+        idx = ids.index(default_id) if default_id in ids else 0
+        choice = c_scope.selectbox("ClickUp list — reconciled against, and applied to",
+                                   labels, index=idx, key="clickup_list")
+        scope_id, scope_label = ids[labels.index(choice)], choice
+    else:
+        scope_id, scope_label = default_id, "the list from .env"
+        c_scope.caption("ClickUp list: the one from .env" if default_id
+                        else "No ClickUp list configured — every point will count as new")
+    st.session_state["scope_choice_id"] = scope_id
+    # The date that goes into every comment is the date of the MEETING, not of the
+    # click. It is also excluded from the idempotency key (Task 4), so re-applying the
+    # same plan on another day stays a no-op.
+    meeting_date = c_date.date_input("Meeting date", value=date.today(), key="meeting_date")
+
     col_a, col_b = st.columns([1, 1])
     run = col_a.button("✨ Generate artifacts", type="primary", use_container_width=True,
                        key="generate")
@@ -261,6 +249,13 @@ with right:
         try:
             started = time.monotonic()
             with st.status("Working through the transcript...", expanded=True) as status:
+                # Read the board before any model call: a bad token fails here, for free.
+                board = get_tasks(scope_id) if scope_id else []
+                if not scope_id:
+                    st.write("Board: no list selected — every point will count as new")
+                else:
+                    st.write(f"Board: {len(board)} open tasks in {scope_label}"
+                             + ("" if board else " — empty, so every point counts as new"))
                 roster = team_roster()
                 if roster:
                     st.write(f"Team roster ({len(roster)}): {roster_line(roster)}")
@@ -271,13 +266,23 @@ with right:
                 sprint_md = build_sprint_summary(context)
                 triage_md = build_bug_triage(context)
                 speakers_md = build_speaker_summary(context, transcript, roster)
+                st.write(f"Stage 2.5/3 — reconciling against the board ({len(board)} tasks)")
+                decisions = reconcile(tasks, board)
+                decided = reconcile_decisions(context.get("decisions", []), board)
+                plan_md = plan_markdown(decisions, board) + "\n" + decisions_markdown(decided, board)
                 elapsed = time.monotonic() - started
                 st.write(f"Stage 3/3 — done in {elapsed:.0f}s")
                 status.update(label=f"Done ✓ · {elapsed:.0f}s", state="complete", expanded=False)
             st.session_state["result"] = {
                 "context": context, "tasks": tasks, "sprint": sprint_md, "triage": triage_md,
                 "speakers": speakers_md, "elapsed": elapsed,
+                "board": board, "decisions": decisions, "decided": decided, "plan": plan_md,
+                "scope_id": scope_id, "scope_label": scope_label,
+                "meeting_date": meeting_date.isoformat(),
             }
+            # A fresh plan means fresh choices for the items below the gate.
+            for k in [k for k in st.session_state if str(k).startswith("ask_")]:
+                del st.session_state[k]
         except (WorkbenchError, ValueError) as exc:
             st.session_state["result"] = None
             st.error(str(exc))
@@ -287,12 +292,14 @@ with right:
         st.info("Paste a transcript on the left and click **Generate artifacts**.")
     else:
         render_metrics(result["context"], result["tasks"])
-        render_clickup(result["tasks"])
-        tab_tasks, tab_sprint, tab_triage, tab_speakers = st.tabs(
-            ["Tasks", "Sprint Summary", "Bug Triage", "By Speaker"]
+        tab_tasks, tab_plan, tab_sprint, tab_triage, tab_speakers = st.tabs(
+            ["Tasks", "Board plan", "Sprint Summary", "Bug Triage", "By Speaker"]
         )
         with tab_tasks:
             render_tasks(result["tasks"])
+        with tab_plan:
+            # older results in session_state predate the plan
+            st.markdown(result.get("plan") or "_Re-run to reconcile against the board._")
         with tab_sprint:
             st.markdown(result["sprint"])
         with tab_triage:

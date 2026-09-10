@@ -117,7 +117,10 @@ def run(transcript_path: Path, board_path: Path | None = None) -> None:
     # world, and it is always asked for explicitly.
     if board:
         print(f"Stage 2.5/3  Reconciling against the board ({len(board)} open tasks)...")
-        decisions = reconcile(context.get("action_items", []), board)
+        # The plan is about what would be created, and what gets created is a task —
+        # so reconcile the ClickUp-ready list, not the raw action items. This also puts
+        # extracted bugs through the board check, which the action items never did.
+        decisions = reconcile(tasks, board)
         create, comment, ask = split_by_confidence(decisions)
         decided = reconcile_decisions(context.get("decisions", []), board)
         plan = plan_markdown(decisions, board) + "\n" + decisions_markdown(decided, board)
