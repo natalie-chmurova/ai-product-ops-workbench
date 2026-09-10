@@ -17,6 +17,11 @@ import re
 
 from .client import ask, load_prompt
 
+# The confidence gate. One number, imported wherever the gate is applied — the plan,
+# the app, the effect eval. The n8n IF nodes carry a literal 0.8 of their own;
+# n8n/README.md says to keep them equal to this.
+GATE = 0.8
+
 
 def board_summary(tasks: list[dict]) -> str:
     """The board as the agent sees it: id, name, and whatever else the task carries.
@@ -141,7 +146,7 @@ def reconcile_decisions(decisions: list[dict], board: list[dict]) -> list[dict]:
     return out
 
 
-def decisions_markdown(decisions: list[dict], board: list[dict], threshold: float = 0.8) -> str:
+def decisions_markdown(decisions: list[dict], board: list[dict], threshold: float = GATE) -> str:
     """The decisions section of the board plan."""
     names = {t["id"]: t.get("name", "") for t in board}
     lines = [f"## Decisions ({len(decisions)})", ""]
@@ -171,7 +176,7 @@ def _kind(d: dict) -> str:
     return f"`{' → '.join(bits)}` " if bits else ""
 
 
-def split_by_confidence(decisions: list[dict], threshold: float = 0.8) -> tuple:
+def split_by_confidence(decisions: list[dict], threshold: float = GATE) -> tuple:
     """Route decisions into (create, comment, ask_a_human).
 
     The same confidence gate the n8n workflow uses: confident calls are applied,
@@ -192,7 +197,7 @@ def split_by_confidence(decisions: list[dict], threshold: float = 0.8) -> tuple:
     return create, comment, ask
 
 
-def plan_markdown(decisions: list[dict], board: list[dict], threshold: float = 0.8) -> str:
+def plan_markdown(decisions: list[dict], board: list[dict], threshold: float = GATE) -> str:
     """What the run intends to do to the board, before it does any of it."""
     names = {t["id"]: t.get("name", "") for t in board}
     create, comment, ask = split_by_confidence(decisions, threshold)

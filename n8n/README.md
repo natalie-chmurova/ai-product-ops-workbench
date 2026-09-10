@@ -31,3 +31,8 @@ Set it before launching n8n. The `Log decision` node fails with a clear message
 if it is missing, rather than writing the log somewhere unexpected.
 
 The other two workflows do not read `WB_HOME` — only the sync one logs.
+
+## The confidence gate
+
+The two `Confident?` IF nodes compare against a literal `0.8`. The Python side keeps
+the same number in `src.reconcile.GATE`; if one moves, move the other.
