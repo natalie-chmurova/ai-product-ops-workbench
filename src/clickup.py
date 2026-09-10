@@ -224,6 +224,55 @@ def _create_task(list_id: str, task: dict, assignee_id: str | None = None) -> tu
     return False, f"{r.status_code}: {r.text[:120]}"
 
 
+def push_context() -> tuple[list[dict], dict[str, str], str | None]:
+    """Members, alias map and backlog list — fetched once per batch of writes."""
+    from .assignees import alias_map, get_members
+
+    try:
+        members = get_members()
+    except Exception:
+        members = []
+    # A newly found defect belongs in the backlog, not in the running sprint. With no
+    # backlog list configured everything still lands in the main list, tagged with
+    # the intended destination, so nothing is silently lost.
+    return members, alias_map(), os.environ.get("CLICKUP_BACKLOG_LIST_ID")
+
+
+def push_one(
+    task: dict,
+    list_id: str,
+    members: list[dict],
+    aliases: dict[str, str],
+    backlog_id: str | None,
+) -> dict:
+    """Create one task: resolve the owner, route to the backlog, tag type/destination.
+
+    Returns {ok, info, assigned, backlog}. One task at a time so a caller can record
+    exactly which effect succeeded — the idempotency key is committed per effect.
+    """
+    from .assignees import resolve_owner
+
+    assignee_id = resolve_owner(task.get("owner"), members, aliases)
+    wants_backlog = str(task.get("destination", "")).lower() == "backlog"
+    target = backlog_id if (wants_backlog and backlog_id) else list_id
+
+    task = dict(task)
+    tags = [t for t in task.get("tags", []) if t]
+    for marker in (task.get("type"), task.get("destination")):
+        marker = str(marker or "").lower()
+        if marker in ("bug", "backlog") and marker not in tags:
+            tags.append(marker)
+    task["tags"] = tags
+
+    ok, info = _create_task(target, task, assignee_id)
+    return {
+        "ok": ok,
+        "info": info,
+        "assigned": bool(assignee_id) and ok,
+        "backlog": wants_backlog and ok,
+    }
+
+
 def push_tasks(tasks: list, list_id: str | None = None) -> dict:
     """Create every task in the target list. Returns a summary dict."""
     list_id = list_id or os.environ.get("CLICKUP_LIST_ID")
@@ -234,43 +283,16 @@ def push_tasks(tasks: list, list_id: str | None = None) -> dict:
     if not tasks:
         raise WorkbenchError("There are no tasks to send. Generate artifacts first.")
 
-    # Resolve owners to real assignees once (members + alias map fetched up front).
-    from .assignees import alias_map, get_members, resolve_owner
-
-    try:
-        members = get_members()
-    except Exception:
-        members = []
-    aliases = alias_map()
-
-    # A newly found defect belongs in the backlog, not in the running sprint.
-    # If no backlog list is configured, everything still lands in the main list —
-    # but the intended destination is tagged, so nothing is silently lost.
-    backlog_id = os.environ.get("CLICKUP_BACKLOG_LIST_ID")
-
+    members, aliases, backlog_id = push_context()
     created, assigned, to_backlog, failures = 0, 0, 0, []
     for task in tasks:
-        assignee_id = resolve_owner(task.get("owner"), members, aliases)
-        wants_backlog = str(task.get("destination", "")).lower() == "backlog"
-        target = backlog_id if (wants_backlog and backlog_id) else list_id
-
-        task = dict(task)
-        tags = [t for t in task.get("tags", []) if t]
-        for marker in (task.get("type"), task.get("destination")):
-            marker = str(marker or "").lower()
-            if marker in ("bug", "backlog") and marker not in tags:
-                tags.append(marker)
-        task["tags"] = tags
-
-        ok, info = _create_task(target, task, assignee_id)
-        if ok:
+        res = push_one(task, list_id, members, aliases, backlog_id)
+        if res["ok"]:
             created += 1
-            if assignee_id:
-                assigned += 1
-            if wants_backlog:
-                to_backlog += 1
+            assigned += res["assigned"]
+            to_backlog += res["backlog"]
         else:
-            failures.append(info)
+            failures.append(res["info"])
 
     return {
         "created": created,

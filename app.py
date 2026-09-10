@@ -19,6 +19,7 @@ from pathlib import Path
 import streamlit as st
 from dotenv import load_dotenv
 
+from src.apply import apply_plan, as_effects
 from src.artifacts import (
     build_bug_triage,
     build_speaker_summary,
@@ -29,7 +30,7 @@ from src.assignees import roster_line, team_roster
 from src.clickup import get_lists, get_tasks
 from src.client import WorkbenchError
 from src.extract import extract_context
-from src.reconcile import decisions_markdown, plan_markdown, reconcile, reconcile_decisions
+from src.reconcile import GATE, decisions_markdown, plan_markdown, reconcile, reconcile_decisions
 
 load_dotenv()
 
@@ -164,6 +165,71 @@ def render_tasks(tasks: list) -> None:
         )
 
 
+def render_apply(result: dict) -> None:
+    """The plan, and one button that applies it — once, to the board it was built on."""
+    if not os.environ.get("CLICKUP_API_TOKEN"):
+        return  # integration not configured — hide the control entirely
+    scope_id = result.get("scope_id")
+    if not scope_id:
+        st.caption("No ClickUp list was selected for this run, so the plan cannot be applied.")
+        return
+    # Both kinds of decision, one plan. A meeting decision that was only rendered in the
+    # tab and never sent would make the tab a promise the button does not keep.
+    create, comment, ask = as_effects(result["decisions"], result.get("decided", []))
+    # The plan belongs to the board it was reconciled against. If the picker has moved
+    # since, applying would write into a board this plan never saw.
+    stale = st.session_state.get("scope_choice_id", scope_id) != scope_id
+
+    with st.container(border=True):
+        st.caption(
+            f"Plan for **{result.get('scope_label', scope_id)}** · create **{len(create)}** · "
+            f"comment on existing **{len(comment)}** · ask a human **{len(ask)}** "
+            f"(gate {GATE:.2f})"
+        )
+        if stale:
+            st.warning(
+                "The list changed after this plan was built. Generate again before applying — "
+                "writing a plan to a board it was not reconciled against is how duplicates "
+                "are made."
+            )
+        # Items below the gate are applied only when a person ticks them, one by one,
+        # the way the agent intended. This is the human in the loop, not auto-apply.
+        approved = []
+        for i, d in enumerate(ask):
+            intent = d.get("intent", "")
+            label = (f"{intent or 'no safe action'} · **{d.get('name', '')}** — "
+                     f"{d.get('reason', '')} (confidence {d.get('confidence', 0):.2f})")
+            if intent and st.checkbox(label, key=f"ask_{i}"):
+                approved.append(d)
+            elif not intent:
+                st.caption(f"⚠️ {label} — needs manual handling")
+
+        if st.button("📤 Apply plan to ClickUp", use_container_width=True, key="apply_plan",
+                     disabled=stale):
+            extra_create = [d for d in approved if d["intent"] == "create"]
+            extra_comment = [d for d in approved if d["intent"] == "comment"]
+            try:
+                with st.spinner("Applying the plan…"):
+                    summary = apply_plan(
+                        create + extra_create, comment + extra_comment, scope_id,
+                        meeting_title=result["context"].get("meeting_title", ""),
+                        when=result.get("meeting_date"),
+                    )
+                st.success(
+                    f"Created {summary['created']} · commented {summary['commented']} · "
+                    f"skipped {summary['skipped']} already applied · "
+                    f"{summary['assigned']} assigned to an owner."
+                )
+                st.markdown(f"➡️ [Open the ClickUp board]({summary['list_url']})")
+                if summary["failed"]:
+                    st.warning(
+                        f"{len(summary['failed'])} effect(s) didn't go through: "
+                        + "; ".join(summary["failed"][:3])
+                    )
+            except (WorkbenchError, ValueError) as exc:
+                st.error(str(exc))
+
+
 @st.cache_data(show_spinner=False, ttl=300)
 def _cached_lists() -> list:
     try:
@@ -293,6 +359,7 @@ with right:
         st.info("Paste a transcript on the left and click **Generate artifacts**.")
     else:
         render_metrics(result["context"], result["tasks"])
+        render_apply(result)
         tab_tasks, tab_plan, tab_sprint, tab_triage, tab_speakers = st.tabs(
             ["Tasks", "Board plan", "Sprint Summary", "Bug Triage", "By Speaker"]
         )
