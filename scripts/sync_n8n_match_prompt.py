@@ -32,9 +32,22 @@ def render(prompt: str) -> str:
     return "=" + out.rstrip("\n")
 
 
+def find_node(data: dict, name: str, source) -> dict:
+    """Look up a node by name in a parsed workflow export.
+
+    A workflow export doesn't index nodes by name, so a rename, a typo, or the
+    wrong file otherwise surfaces as a bare `StopIteration` with no clue which
+    node was sought or which file was searched. This names both.
+    """
+    for node in data["nodes"]:
+        if node["name"] == name:
+            return node
+    raise LookupError(f"no node named {name!r} in {source}")
+
+
 def patch(path: Path) -> None:
     data = json.loads(path.read_text(encoding="utf-8"))
-    node = next(n for n in data["nodes"] if n["name"] == NODE)
+    node = find_node(data, NODE, path)
     prompt = (ROOT / "prompts" / "match.md").read_text(encoding="utf-8")
     node["parameters"]["messages"]["values"][0]["content"] = render(prompt)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
