@@ -1,9 +1,10 @@
 # From portfolio to reusable pipeline — Program design
 
 **Date:** 2026-09-09
-**Status:** Draft — revised 2026-09-10 after review. All ten findings are accepted; where
-the fix differs from the one suggested, the section says so. One decision belongs to the
-owner and is marked ⚠.
+**Status:** Approved 2026-09-10. Revised the same day after review: all ten findings
+accepted, and where the fix differs from the one suggested the section says so. The apply
+policy was the one open decision and the owner settled it (see "Two apply policies"). The
+licence in M2 is still the owner's call.
 **Scope:** five milestones (M1–M5). M1 has its own implementation plan
 (`docs/superpowers/plans/2026-09-09-m1-demo-consistency.md`); M2–M5 get a plan each when
 their turn comes, after the previous milestone is merged and reviewed.
@@ -56,7 +57,7 @@ sequence of milestones, each shippable on its own.
   not started until then. M1 and M2 change no prompt and need no measurement.
 - New artifacts or new extraction features.
 
-## Two apply policies ⚠
+## Two apply policies
 
 The programme has three surfaces and they do not share one policy. Stating a single rule for
 all of them, as the first draft did, was false about n8n.
@@ -67,7 +68,9 @@ all of them, as the first draft did, was false about n8n.
 | Web app (from M1) | applies the plan when the button is pressed; items below the gate only when ticked one by one | required for everything |
 | n8n sync workflow | `confidence ≥ 0.8` creates the task or posts the comment on its own; below the gate it asks in Telegram | only below the gate |
 
-**The decision to confirm.** This spec assumes n8n keeps its automatic branch. That branch is
+**Decided 2026-09-10 by the owner: n8n keeps its automatic branch.** The reasoning below is
+why, kept because the counter-argument is real and should stay visible rather than be argued
+away. That branch is
 the agentic demo the case study, the Pages site and the résumé bullets are about — "≥ 0.8 acts
 automatically, below it goes to a human" is the artifact, not an oversight, and removing it
 would invalidate published material.
