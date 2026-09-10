@@ -30,7 +30,17 @@ export WB_HOME=/path/to/ai-product-ops-workbench
 Set it before launching n8n. The `Log decision` node fails with a clear message
 if it is missing, rather than writing the log somewhere unexpected.
 
-The other two workflows do not read `WB_HOME` — only the sync one logs.
+The sync workflow reads `WB_HOME` in three nodes — `Log decision`,
+`Idempotency check` and `Mark processed` — so the decision log and the idempotency
+store both live in the checkout, in the same files the Python app writes. The other
+two workflows do not read it.
+
+## Keeping the prompt in sync
+
+The `Match agent (Claude)` node carries `prompts/match.md`, rendered by
+`scripts/sync_n8n_match_prompt.py`. Run it after editing the prompt, on the repo
+export and on an exported copy of the live workflow; `tests/test_n8n_parity.py`
+fails whenever the two differ.
 
 ## The confidence gate
 
