@@ -223,7 +223,8 @@ with left:
                                    labels, index=idx, key="clickup_list")
         scope_id, scope_label = ids[labels.index(choice)], choice
     else:
-        scope_id, scope_label = default_id, "the list from .env"
+        scope_id = default_id
+        scope_label = "the list from .env" if default_id else "No ClickUp list configured"
         c_scope.caption("ClickUp list: the one from .env" if default_id
                         else "No ClickUp list configured — every point will count as new")
     st.session_state["scope_choice_id"] = scope_id
