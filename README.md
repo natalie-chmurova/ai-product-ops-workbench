@@ -38,11 +38,19 @@ A small three-stage pipeline built on the [Claude API](https://console.anthropic
 Prompts live in [`prompts/`](prompts/) as plain Markdown — the product logic is
 first-class and editable without touching code.
 
-**Send to ClickUp (optional):** with a `CLICKUP_API_TOKEN` set, the web app shows a
-"Send to ClickUp" button that creates the generated tasks — titled, prioritized, tagged,
-and **assigned to the resolved owner** — directly in a ClickUp list, so a meeting turns
-into a populated board in one click. Owner names resolve to real assignees via an alias
-map (`OWNER_ALIASES`) → fuzzy match on workspace members → unassigned fallback.
+**Board plan and apply (optional):** with `CLICKUP_API_TOKEN` set, the app lists the
+workspace's ClickUp lists to pick from when `CLICKUP_TEAM_ID` is set, using
+`CLICKUP_LIST_ID` as the default, and reads the chosen board before the first model
+call; a fifth tab, **Board plan**, shows what the run would do to it — create, comment
+on an existing task, or ask a human — with the agent's reason for each. The list is
+chosen before you click Generate, and the plan is applied only to the list it was
+reconciled against. One button applies that plan: new tasks are created titled,
+prioritized, tagged and **assigned to the resolved owner**; matched points land as
+comments carrying the meeting title and date. Items below the confidence gate are
+applied only if you tick them, one by one. Every effect goes through the same
+idempotency store the n8n workflow uses, so clicking twice applies nothing twice. Owner
+names resolve via an alias map (`OWNER_ALIASES`) → fuzzy match on workspace members →
+unassigned fallback.
 
 ## Run it
 
@@ -81,6 +89,7 @@ src/
   render.py         stage 3 — artifacts → report.html
   reconcile.py      stage 1.5 — check each point against the board before acting
   clickup.py        reads the board and writes to it
+  apply.py          applies a plan to the board, each effect at most once
 prompts/            the instructions for each stage (Markdown)
 samples/            synthetic demo transcripts (no real/sensitive data)
 evals/              the three eval harnesses, their labels and their results
@@ -131,9 +140,11 @@ threshold could have bought on this set, not what to set it to.
 
 ## The apply gate
 
-The pipeline builds a plan and stops. It writes `outputs/board_plan.md` and never touches
-the tracker. That is a decision, not an unfinished feature — and the reason is the shape of
-the misses, not the headline number.
+The pipeline builds a plan and stops. The CLI writes `outputs/board_plan.md` and never
+touches the tracker; the web app shows the same plan and applies it only when a person
+clicks, with anything below the gate opted in item by item. Nothing is written on the
+pipeline's own judgement. That is a decision, not an unfinished feature — and the reason
+is the shape of the misses, not the headline number.
 
 ### What the 50–67% is actually made of
 
