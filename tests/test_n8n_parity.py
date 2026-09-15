@@ -11,7 +11,7 @@ import pytest
 from scripts.sync_n8n_match_prompt import NODE, find_node, patch, render
 from src.apply import comment_key, create_key
 from src.clickup import _task_row
-from src.reconcile import board_summary, reconcile
+from src.reconcile import board_summary, parse_decision, reconcile
 
 ROOT = Path(__file__).resolve().parent.parent
 WORKFLOW = ROOT / "n8n" / "meeting-to-clickup-sync.workflow.json"
@@ -237,3 +237,60 @@ def test_the_app_keys_a_point_as_the_idempotency_check_node_does(case, node_keys
     reconciled = reconcile([dict(point)], KEY_BOARD)[0]
     app_key = create_key(reconciled) if decision == "NEW" else comment_key(reconciled)
     assert app_key == node_keys[case]
+
+
+# --- an UPDATE target counts only if it is exactly a board id ---
+
+# Raw ClickUp tasks, as Fetch board hands them to Board summary: status, owner, due date.
+SUMMARY_TASKS = [
+    {"id": "86eyay0p7", "name": "[Checkout][Dev] Resolve payment sandbox tokenization",
+     "status": {"status": "in progress"}, "assignees": [{"username": "natalie"}],
+     "due_date": str(_epoch_ms(2026, 9, 18))},
+    {"id": "86ey9z6rc", "name": "[ProductDetail][Dev] Fix crash on product detail",
+     "status": {"status": "to do"}, "assignees": [], "due_date": None},
+]
+# What the agent might name as TASK_ID. All but the first and the last are words the
+# board text carries without being an id.
+TASK_IDS = {
+    "real-id": "86eyay0p7",
+    "truncated-id": "86eyay0p",
+    "status-word": "progress",
+    "owner-name": "natalie",
+    "year": "2026",
+    "none": "NONE",
+}
+
+
+def _update_reply(task_id: str) -> str:
+    return f"DECISION: UPDATE\nTASK_ID: {task_id}\nCONFIDENCE: 0.95\nREASON: canned"
+
+
+@pytest.fixture(scope="module")
+def parse_decision_run():
+    """Board summary's own code renders the board; Parse decision's own code reads every
+    reply against it. Returns (Board summary's json, {case: Parse decision's json})."""
+    _needs_node()
+    summary = _run_node("Board summary", SUMMARY_TASKS)[0]
+    point = {"name": "[Payments] Saved cards", "description": "provider fixed the sandbox"}
+    replies = [{"content": [{"type": "text", "text": _update_reply(task_id)}]}
+               for task_id in TASK_IDS.values()]
+    parsed = _run_node("Parse decision", replies,
+                       nodes={"Parse tasks": [point] * len(replies), "Board summary": [summary]})
+    return summary, dict(zip(TASK_IDS, parsed))
+
+
+def test_board_summary_hands_on_the_board_ids(parse_decision_run):
+    summary, _ = parse_decision_run
+    assert summary["ids"] == [t["id"] for t in SUMMARY_TASKS]
+
+
+@pytest.mark.parametrize("case", list(TASK_IDS))
+def test_parse_decision_takes_an_update_target_only_if_it_is_a_board_id(case, parse_decision_run):
+    # The board text carries status, owner and due words, so a substring test against it
+    # let "progress", a name, a year or a truncated id through at full confidence, down
+    # the automatic branch. parse_decision() checks exact ids and blanks the target; the
+    # node has to reach the same target and confidence on the same reply and board.
+    _, parsed = parse_decision_run
+    expected = parse_decision(_update_reply(TASK_IDS[case]), [_task_row(t) for t in SUMMARY_TASKS])
+    assert (parsed[case]["target_id"], parsed[case]["confidence"]) == (
+        expected["target_id"], expected["confidence"])
