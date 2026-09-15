@@ -216,7 +216,9 @@ Speaker tab. Tests: 65 → about 95, all green.
 - The package layout stays (`src/` imported as `src.*`); renaming the package is not worth
   touching every eval and test for.
 - `Dockerfile` on `python:3.11-slim` running the Streamlit app; `compose.yaml` with the
-  app and `n8nio/n8n`, `WB_HOME` mounted, `NODE_FUNCTION_ALLOW_BUILTIN=fs,crypto` set.
+  app and `n8nio/n8n`, `WB_HOME` mounted, `NODE_FUNCTION_ALLOW_BUILTIN=fs,crypto` set, and
+  `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`, without which n8n 2.x blocks the `$env` the Code
+  nodes read `WB_HOME` through.
   Docker is not installed on the development machine, so the build is verified in CI.
 - `.github/workflows/ci.yml`: pytest on 3.11 and 3.12, then `docker build`.
 - `LICENSE`: MIT. Visibility is the portfolio's value, and a paid setup engagement does
