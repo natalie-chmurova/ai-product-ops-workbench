@@ -308,35 +308,3 @@ def push_one(
         "assigned": bool(assignee_id) and ok,
         "backlog": wants_backlog and ok,
     }
-
-
-def push_tasks(tasks: list, list_id: str | None = None) -> dict:
-    """Create every task in the target list. Returns a summary dict."""
-    list_id = list_id or os.environ.get("CLICKUP_LIST_ID")
-    if not list_id:
-        raise WorkbenchError(
-            "No target list. Set CLICKUP_LIST_ID in your .env or pass a list_id."
-        )
-    if not tasks:
-        raise WorkbenchError("There are no tasks to send. Generate artifacts first.")
-
-    members, aliases, backlog_id = push_context()
-    created, assigned, to_backlog, failures = 0, 0, 0, []
-    for task in tasks:
-        res = push_one(task, list_id, members, aliases, backlog_id)
-        if res["ok"]:
-            created += 1
-            assigned += res["assigned"]
-            to_backlog += res["backlog"]
-        else:
-            failures.append(res["info"])
-
-    return {
-        "created": created,
-        "assigned": assigned,
-        "backlog": to_backlog,
-        "backlog_list_configured": bool(backlog_id),
-        "failed": failures,
-        "total": len(tasks),
-        "list_url": list_url(list_id),
-    }
