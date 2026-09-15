@@ -209,12 +209,16 @@ def render_apply(result: dict) -> None:
                      disabled=stale):
             extra_create = [d for d in approved if d["intent"] == "create"]
             extra_comment = [d for d in approved if d["intent"] == "comment"]
+            # The meeting date as the input shows it now, not as it was at Generate: a date
+            # corrected after the plan was built is the one the person means. The date is in
+            # no key, so reading it here cannot make an effect apply twice.
+            meeting_date = st.session_state.get("meeting_date")
             try:
                 with st.spinner("Applying the plan…"):
                     summary = apply_plan(
                         create + extra_create, comment + extra_comment, scope_id,
                         meeting_title=result["context"].get("meeting_title", ""),
-                        when=result.get("meeting_date"),
+                        when=meeting_date.isoformat() if meeting_date else None,
                     )
                 st.success(
                     f"Created {summary['created']} · commented {summary['commented']} · "
@@ -308,8 +312,9 @@ with left:
     st.session_state["scope_choice_id"] = scope_id
     # The date that goes into every comment is the date of the MEETING, not of the
     # click. It is also excluded from the idempotency key (Task 4), so re-applying the
-    # same plan on another day stays a no-op.
-    meeting_date = c_date.date_input("Meeting date", value=date.today(), key="meeting_date")
+    # same plan on another day stays a no-op. render_apply reads it at the Apply click,
+    # so a date corrected after Generate is the date that is used.
+    c_date.date_input("Meeting date", value=date.today(), key="meeting_date")
 
     col_a, col_b = st.columns([1, 1])
     run = col_a.button("✨ Generate artifacts", type="primary", use_container_width=True,
@@ -361,7 +366,6 @@ with right:
                 "speakers": speakers_md, "elapsed": elapsed,
                 "board": board, "decisions": decisions, "decided": decided, "plan": plan_md,
                 "scope_id": scope_id, "scope_label": scope_label,
-                "meeting_date": meeting_date.isoformat(),
             }
             # A fresh plan means fresh choices for the items below the gate.
             for k in [k for k in st.session_state if str(k).startswith("ask_")]:
