@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 
 from .client import ask, load_prompt
+from .idempotency import name_and_body
 
 # The confidence gate. One number, imported wherever the gate is applied — the plan,
 # the app, the effect eval. The n8n IF nodes carry a literal 0.8 of their own;
@@ -122,12 +123,14 @@ def reconcile_decisions(decisions: list[dict], board: list[dict]) -> list[dict]:
     """
     out = []
     for d in decisions:
-        what = d.get("what") if isinstance(d, dict) else str(d)
-        affects = d.get("affects", "") if isinstance(d, dict) else ""
-        kind = d.get("kind", "other") if isinstance(d, dict) else "other"
+        # A bare string is a meeting decision given as its sentence alone.
+        d = d if isinstance(d, dict) else {"what": str(d)}
+        name, _ = name_and_body(d)  # its sentence, which is also its body
+        affects = d.get("affects", "")
+        kind = d.get("kind", "other")
 
         if board:
-            decision = decide_one(what, f"This decision changes: {affects}", board)
+            decision = decide_one(name, f"This decision changes: {affects}", board)
         else:
             decision = {"decision": "NEW", "target_id": "", "confidence": 0.0,
                         "reason": "no board to match the decision against"}
@@ -135,7 +138,7 @@ def reconcile_decisions(decisions: list[dict], board: list[dict]) -> list[dict]:
         # NEW is meaningless for a decision: if nothing matched, a human looks at it.
         effect = "comment" if decision["target_id"] else "ask"
         out.append({
-            "name": what,
+            "name": name,
             "affects": affects,
             "kind": kind,
             "effect": effect,
@@ -267,8 +270,7 @@ def reconcile(items: list[dict], board: list[dict]) -> list[dict]:
     """
     out = []
     for item in items:
-        name = item.get("name") or item.get("what") or ""
-        detail = item.get("description") or item.get("context") or ""
+        name, detail = name_and_body(item)
         if board:
             decision = decide_one(name, detail, board)
         else:
@@ -278,7 +280,8 @@ def reconcile(items: list[dict], board: list[dict]) -> list[dict]:
                 "confidence": 1.0,
                 "reason": "board is empty, nothing to match against",
             }
-        # normalise the label: stage 1 calls it `what`, tasks call it `name`,
-        # and everything downstream (plan, comments) needs one predictable field
+        # normalise the label: stage 1 calls it `what`, tasks call it `name`, and
+        # everything downstream (plan, comments, the key) needs one predictable pair,
+        # read by the same definition the key reads a point with
         out.append({**item, **decision, "name": name, "detail": detail})
     return out

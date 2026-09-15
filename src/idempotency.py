@@ -5,11 +5,12 @@ Deterministic guard so re-processing the same meeting does not create
 duplicate tasks or comments. Keyed on the *applied effect* (an UPDATE comment
 on a task, or a NEW task), computed after the Match agent's decision.
 
-This one module answers "what is this effect's key": which text a point contributes,
-how that text is normalised and hashed, and the key of creating a task or of commenting
-on one. The n8n "Idempotency check" Code node computes the same key from the items
-"Parse decision" builds; tests/test_n8n_parity.py runs that node's own code to check
-that the two agree, and tests/idempotency_vectors.json pins the formula.
+This one module answers "what is this effect's key": which text a point contributes (its
+name and body, by name_and_body, which reconcile.py reads points with too), how that text
+is normalised and hashed, and the key of creating a task or of commenting on one. The n8n
+"Idempotency check" Code node computes the same key from the items "Parse decision"
+builds; tests/test_n8n_parity.py runs that node's own code to check that the two agree,
+and tests/idempotency_vectors.json pins the formula.
 """
 
 from __future__ import annotations
@@ -60,23 +61,43 @@ def effect_key(kind: str, target: str, content: str) -> str:
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()
 
 
-def comment_body(item: dict) -> str:
-    """What the comment is about — and the only thing its key is computed from. Trimmed
-    as Parse decision trims it: (item.description || item.name || '').trim()."""
-    return _trim(item.get("detail") or item.get("description") or item.get("name") or "")
+def name_and_body(point: dict) -> tuple[str, str]:
+    """A point's name and its body: the text its match is asked about, and the only text
+    its key is made from. One definition, for every shape a point comes in.
+
+    The name is `name`, or `what` as extraction writes it. The body is what the point says
+    beyond its name: `detail` once reconcile() has handed the point on, `description` on a
+    task, `context` on an action item. A meeting decision, the only point that names the
+    work it `affects`, is one sentence, and that sentence is its body as well as its name.
+    That is a rule, not a fallback, so a field given to meeting decisions later cannot
+    become their body and re-key the comments already applied for them. A field that is
+    missing or null reads as empty, as the n8n node's (x || '') reads it; str(None) would
+    hash the word "None" and give one effect two keys in the store the app and n8n share.
+    """
+    name = point.get("name") or point.get("what") or ""
+    if "affects" in point:
+        return name, name
+    return name, point.get("detail") or point.get("description") or point.get("context") or ""
 
 
-def create_key(task: dict) -> str:
-    """The key of creating `task` as a new task."""
-    # A null description is no description. Read it the way comment_body reads its
-    # fields and the n8n Idempotency check reads it, (j.description || ''): str(None)
-    # would hash the word "None" and give one effect two keys in the store they share.
-    # No strip here: normalize trims, with the node's whitespace.
-    return effect_key("NEW", "", f"{task.get('name', '')} {task.get('description') or ''}")
+def comment_body(point: dict) -> str:
+    """What a comment says about a point — and the only text its key is computed from: its
+    body, or its name when it has none, trimmed as Parse decision's
+    (item.description || item.name || '').trim() trims it."""
+    name, body = name_and_body(point)
+    return _trim(body or name)
 
 
-def comment_key(item: dict) -> str:
-    """The key of commenting on `item`'s target task: keyed on the body, never on the
+def create_key(point: dict) -> str:
+    """The key of creating a point as a new task: its name and its body, joined as the
+    Idempotency check node joins (j.name || '') and (j.description || ''). There is no
+    strip here: normalize trims, with the node's whitespace."""
+    name, body = name_and_body(point)
+    return effect_key("NEW", "", f"{name} {body}")
+
+
+def comment_key(point: dict) -> str:
+    """The key of commenting on `point`'s target task: keyed on the body, never on the
     rendered comment.
 
     The rendered text carries the meeting title and date, so hashing it would hand the
@@ -85,7 +106,7 @@ def comment_key(item: dict) -> str:
     stores that compute different keys for one effect are not one store, which is the
     whole reason both write to state/processed_effects.jsonl.
     """
-    return effect_key("UPDATE", item.get("target_id", ""), comment_body(item))
+    return effect_key("UPDATE", point.get("target_id", ""), comment_body(point))
 
 
 class IdempotencyStore:

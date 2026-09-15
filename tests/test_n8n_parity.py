@@ -202,6 +202,7 @@ KEY_CASES = {
         {"name": "[Dev] New alerting", "description": "Goal:\nalert on CDN errors"}, "NEW"),
     "new-description-null": ({"name": "[Dev] Null description", "description": None}, "NEW"),
     "new-no-description-key": ({"name": "[Dev] No description"}, "NEW"),
+    "new-name-null": ({"name": None, "description": "alert on CDN errors"}, "NEW"),
     "new-body-with-u001c-u0085-ufeff": (
         {"name": "[Dev] New alerting",
          "description": f"{FS}alert{NEL}on{BOM}CDN errors{BOM}{NEL}{FS}"}, "NEW"),
@@ -211,6 +212,7 @@ KEY_CASES = {
         {"name": "[Payments] Saved cards", "description": "provider fixed the sandbox"}, "UPDATE"),
     "update-body-falls-back-to-name": (
         {"name": "[Dev] Crash fix in review", "description": None}, "UPDATE"),
+    "update-name-null-falls-back-to-nothing": ({"name": None, "description": None}, "UPDATE"),
     "update-body-with-u001c": (
         {"name": "[Payments] Saved cards",
          "description": f"{FS}provider{FS}fixed the sandbox{FS}"}, "UPDATE"),
