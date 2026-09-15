@@ -206,12 +206,17 @@ def load_board_fixture(path) -> list[dict]:
 
 def add_comment(task_id: str, text: str) -> tuple[bool, str]:
     """Comment on an existing task — the effect that replaces creating a duplicate."""
-    r = requests.post(
-        f"{API}/task/{task_id}/comment",
-        headers=_headers(),
-        json={"comment_text": text, "notify_all": False},
-        timeout=20,
-    )
+    try:
+        r = requests.post(
+            f"{API}/task/{task_id}/comment",
+            headers=_headers(),
+            json={"comment_text": text, "notify_all": False},
+            timeout=20,
+        )
+    except requests.RequestException as exc:
+        # A dropped request is a failed effect like a rejected one: reported, keyless,
+        # free to be retried — not a traceback that loses the rest of the run's summary.
+        return False, f"network error: {exc}"
     if r.status_code in (200, 201):
         return True, task_id
     return False, f"HTTP {r.status_code}: {r.text[:120]}"
@@ -245,9 +250,12 @@ def _create_task(list_id: str, task: dict, assignee_id: str | None = None) -> tu
     # Tags that don't exist in the space can cause a rejection — retry without them.
     if tags:
         payload.pop("tags", None)
-        retry = requests.post(
-            f"{API}/list/{list_id}/task", headers=_headers(), json=payload, timeout=30
-        )
+        try:
+            retry = requests.post(
+                f"{API}/list/{list_id}/task", headers=_headers(), json=payload, timeout=30
+            )
+        except requests.RequestException as exc:
+            return False, f"network error: {exc}"
         if retry.status_code == 200:
             return True, payload["name"]
     return False, f"{r.status_code}: {r.text[:120]}"

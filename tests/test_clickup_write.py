@@ -62,3 +62,22 @@ def test_a_null_description_is_sent_as_an_empty_one(monkeypatch):
     ok, _ = clickup._create_task("list1", {"name": "[Dev] Null description", "description": None})
     assert ok
     assert sent[0]["description"] == ""
+
+
+def test_a_network_error_on_the_tagless_retry_is_a_reason_not_a_raise(monkeypatch):
+    # A tag the space lacks gets the create rejected, so it is retried without tags. The
+    # retry's request can fail too, and that has to come back as a reason, like the first.
+    answers = iter([Response(400, "Tag not found"),
+                    clickup.requests.ConnectionError("Connection reset by peer")])
+
+    def post(url, **kwargs):
+        answer = next(answers)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setenv("CLICKUP_API_TOKEN", "pk_test")
+    monkeypatch.setattr(clickup.requests, "post", post)
+    ok, info = clickup._create_task("list1", {"name": "x", "tags": ["nope"]})
+    assert ok is False
+    assert "network error" in info
