@@ -193,7 +193,8 @@ def _create_task(list_id: str, task: dict, assignee_id: str | None = None) -> tu
     """Create one task. Returns (ok, task_name_or_error)."""
     payload = {
         "name": str(task.get("name", "Untitled task"))[:250],
-        "description": str(task.get("description", "")),
+        # A null description is no description, not the word "None".
+        "description": str(task.get("description") or ""),
     }
     priority = task.get("priority")
     if priority in (1, 2, 3, 4):

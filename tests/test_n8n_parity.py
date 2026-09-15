@@ -9,21 +9,46 @@ from pathlib import Path
 import pytest
 
 from scripts.sync_n8n_match_prompt import NODE, find_node, patch, render
+from src.apply import comment_key, create_key
 from src.clickup import _task_row
-from src.reconcile import board_summary
+from src.reconcile import board_summary, reconcile
 
 ROOT = Path(__file__).resolve().parent.parent
 WORKFLOW = ROOT / "n8n" / "meeting-to-clickup-sync.workflow.json"
 
-# Fakes just enough of the n8n Code-node runtime for "Board summary" to run under
-# plain Node: read {code, items} from stdin, expose items through $input.all(), and
-# evaluate the node's own jsCode unmodified inside `new Function`.
+# Fakes just enough of the n8n Code-node runtime for a node's own jsCode to run under
+# plain Node, unmodified, inside `new Function`. It reads a job from stdin:
+#   code, items  the node's jsCode and its input items (each item's json)
+#   mode         "runOnceForEachItem" runs the code once per item, with $json and
+#                $input.item set, as n8n does; anything else runs it once over all items
+#   env          what $env holds (empty unless given)
+#   nodes        other nodes' output items by name: $('Name').first() is the first one,
+#                and $('Name').item the one paired with the current item (same index)
+# `require` hands out fs and crypto only, the modules the n8n launcher allows.
 _NODE_RUNNER = r"""
 const fs = require('fs');
-const payload = JSON.parse(fs.readFileSync(0, 'utf8'));
-const items = payload.items.map(json => ({ json }));
-const $input = { all: () => items };
-const result = new Function('$input', payload.code)($input);
+const job = JSON.parse(fs.readFileSync(0, 'utf8'));
+const items = job.items.map(json => ({ json }));
+const perItem = job.mode === 'runOnceForEachItem';
+const allowed = new Set(['fs', 'crypto']);
+const nodeRequire = name => {
+  if (!allowed.has(name)) throw new Error(`require('${name}') is not allowed in the Code node`);
+  return require(name);
+};
+const others = job.nodes || {};
+const lookup = index => name => {
+  if (!(name in others)) throw new Error(`the stand-in has no output for node '${name}'`);
+  return { first: () => ({ json: others[name][0] }), item: { json: others[name][index] } };
+};
+const run = index => new Function('$input', 'items', '$json', '$', '$env', 'require', job.code)(
+  { all: () => items, item: perItem ? items[index] : undefined },
+  items,
+  perItem ? items[index].json : undefined,
+  lookup(index),
+  job.env || {},
+  nodeRequire
+);
+const result = perItem ? items.map((_, i) => run(i)) : run(0);
 process.stdout.write(JSON.stringify(result));
 """
 
@@ -137,3 +162,78 @@ def test_patch_names_the_missing_node(tmp_path):
     message = str(exc_info.value)
     assert NODE in message
     assert str(bogus) in message
+
+
+def _needs_node() -> None:
+    if shutil.which("node") is None:
+        pytest.skip("node is not installed; running an n8n node's own code needs it")
+
+
+def _run_node(name: str, items: list, **stand_in) -> list:
+    """Run one node's own jsCode from the export under node; return its output items' json.
+
+    `stand_in` is what the node reads besides its input: `env` for $env, `nodes` for
+    $('Name'). The mode is the node's own, so a per-item node runs once per item.
+    """
+    params = _node(name)["parameters"]
+    job = {"code": params["jsCode"], "mode": params.get("mode", "runOnceForAllItems"),
+           "items": items, **stand_in}
+    proc = subprocess.run(["node", "-e", _NODE_RUNNER], input=json.dumps(job),
+                          capture_output=True, text=True)
+    if proc.returncode != 0:
+        pytest.fail(f"the {name!r} node threw under node:\n{proc.stderr}")
+    return [out["json"] for out in json.loads(proc.stdout)]
+
+
+# --- one key spec: the app and the n8n Idempotency check key a point alike ---
+
+KEY_BOARD = [{"id": "86abc", "name": "[Payments] Fix saved cards", "status": "",
+              "assignees": [], "due_date": ""}]
+# One meeting point each, with the match agent's verdict on it.
+KEY_CASES = {
+    "new-with-description": (
+        {"name": "[Dev] New alerting", "description": "Goal:\nalert on CDN errors"}, "NEW"),
+    "new-description-null": ({"name": "[Dev] Null description", "description": None}, "NEW"),
+    "new-no-description-key": ({"name": "[Dev] No description"}, "NEW"),
+    "update-body-from-description": (
+        {"name": "[Payments] Saved cards", "description": "provider fixed the sandbox"}, "UPDATE"),
+    "update-body-falls-back-to-name": (
+        {"name": "[Dev] Crash fix in review", "description": None}, "UPDATE"),
+}
+
+
+def _task_id(decision: str) -> str:
+    return KEY_BOARD[0]["id"] if decision == "UPDATE" else "NONE"
+
+
+def _as_parse_decision_emits(point: dict, decision: str) -> dict:
+    """What Idempotency check receives for this point: the point plus Parse decision's
+    verdict. `target_id` is the TASK_ID as that node parses it, and `comment` is its own
+    expression, (item.description || item.name || '').trim()."""
+    return {**point, "is_update": decision == "UPDATE", "target_id": _task_id(decision),
+            "comment": (point.get("description") or point.get("name") or "").strip()}
+
+
+@pytest.fixture(scope="module")
+def node_keys(tmp_path_factory):
+    """Every case keyed by the Idempotency check node's own code, in one run. WB_HOME is
+    an empty directory, so the node's read of the store finds nothing."""
+    _needs_node()
+    items = [_as_parse_decision_emits(point, decision) for point, decision in KEY_CASES.values()]
+    out = _run_node("Idempotency check", items,
+                    env={"WB_HOME": str(tmp_path_factory.mktemp("wb_home"))})
+    return {case: item["idem_key"] for case, item in zip(KEY_CASES, out)}
+
+
+@pytest.mark.parametrize("case", list(KEY_CASES))
+def test_the_app_keys_a_point_as_the_idempotency_check_node_does(case, node_keys, monkeypatch):
+    # The app and n8n share one store only if both compute one key per effect. The key
+    # formula is pinned by tests/idempotency_vectors.json; what can drift is the assembly
+    # -- which field, which fallback, which separator -- so this runs the node's own code
+    # and compares its key with the app's for the same point, as reconcile() hands it on.
+    point, decision = KEY_CASES[case]
+    reply = f"DECISION: {decision}\nTASK_ID: {_task_id(decision)}\nCONFIDENCE: 0.9\nREASON: canned"
+    monkeypatch.setattr("src.reconcile.ask", lambda system, prompt, max_tokens=400: reply)
+    reconciled = reconcile([dict(point)], KEY_BOARD)[0]
+    app_key = create_key(reconciled) if decision == "NEW" else comment_key(reconciled)
+    assert app_key == node_keys[case]

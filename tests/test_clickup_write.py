@@ -3,6 +3,12 @@
 from src import clickup
 
 
+class Response:
+    def __init__(self, status: int, text: str = ""):
+        self.status_code = status
+        self.text = text
+
+
 def _capture(monkeypatch, ok=True):
     calls = []
 
@@ -45,3 +51,14 @@ def test_push_one_reports_failure(monkeypatch):
     res = clickup.push_one({"name": "x"}, "main", [], {}, None)
     assert res["ok"] is False and "500" in res["info"]
     assert res["assigned"] is False and res["backlog"] is False
+
+
+def test_a_null_description_is_sent_as_an_empty_one(monkeypatch):
+    # str(None) is "None": a model's "description": null used to reach ClickUp as that word.
+    sent = []
+    monkeypatch.setenv("CLICKUP_API_TOKEN", "pk_test")
+    monkeypatch.setattr(clickup.requests, "post",
+                        lambda url, **kwargs: sent.append(kwargs["json"]) or Response(200))
+    ok, _ = clickup._create_task("list1", {"name": "[Dev] Null description", "description": None})
+    assert ok
+    assert sent[0]["description"] == ""

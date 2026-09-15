@@ -85,15 +85,13 @@ def test_the_comment_says_which_meeting_and_when():
     assert "provider fixed the sandbox" in text
 
 
-def test_the_key_matches_the_n8n_spec():
-    # NEW is keyed on name + " " + description; UPDATE on target + the item BODY. Those
-    # are the two payloads the n8n Idempotency check node hashes, so the app and the
-    # workflow share one store instead of two that disagree.
-    from src.idempotency import effect_key
-    assert apply.create_key(CREATE[0]) == effect_key(
-        "NEW", "", "[Dev] New alerting Goal:\nalert on CDN errors")
-    assert apply.comment_key(COMMENT[0]) == effect_key(
-        "UPDATE", "86abc", "provider fixed the sandbox")
+def test_a_null_description_keys_like_no_description():
+    # A model that answers "description": null means there is no description. The n8n
+    # Idempotency check reads it as '' -- (j.description || '') -- so the app has to as
+    # well, or the store the two share holds two keys for one effect. The node itself is
+    # run in tests/test_n8n_parity.py; this holds on a machine without node.
+    name = "[Dev] Null description"
+    assert apply.create_key({"name": name, "description": None}) == apply.create_key({"name": name})
 
 
 def test_the_same_plan_on_another_day_is_still_a_no_op(monkeypatch, tmp_path):

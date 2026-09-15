@@ -35,7 +35,10 @@ def comment_text(item: dict, meeting_title: str, when: str) -> str:
 
 
 def create_key(task: dict) -> str:
-    return effect_key("NEW", "", f"{task.get('name', '')} {task.get('description', '')}".strip())
+    # A null description is no description. Read it the way comment_body reads its
+    # fields and the n8n Idempotency check reads it, (j.description || ''): str(None)
+    # would hash the word "None" and give one effect two keys in the store they share.
+    return effect_key("NEW", "", f"{task.get('name', '')} {task.get('description') or ''}".strip())
 
 
 def comment_key(item: dict) -> str:
