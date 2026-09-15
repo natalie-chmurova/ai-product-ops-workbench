@@ -19,7 +19,7 @@ from pathlib import Path
 import streamlit as st
 from dotenv import load_dotenv
 
-from src.apply import apply_plan, as_effects
+from src.apply import apply_plan, as_effects, ask_label
 from src.artifacts import (
     build_bug_triage,
     build_speaker_summary,
@@ -197,8 +197,9 @@ def render_apply(result: dict) -> None:
         approved = []
         for i, d in enumerate(ask):
             intent = d.get("intent", "")
-            label = (f"{intent or 'no safe action'} · **{d.get('name', '')}** — "
-                     f"{d.get('reason', '')} (confidence {d.get('confidence', 0):.2f})")
+            # A doubtful comment names the task it would land on: that match is what the
+            # person is being asked to check.
+            label = ask_label(d, result.get("board", []))
             if intent and st.checkbox(label, key=f"ask_{i}"):
                 approved.append(d)
             elif not intent:

@@ -174,3 +174,36 @@ def test_task_decisions_and_meeting_decisions_end_up_in_one_plan():
     create, comment, ask = apply.as_effects([task], [dict(DECIDED_SURE)])
     assert [d["intent"] for d in create] == ["create"]
     assert [d["intent"] for d in comment] == ["comment"]
+
+
+# --- what a person reads before ticking a doubtful call ---
+
+BOARD = [{"id": "86abc", "name": "[Payments] Fix saved cards"},
+         {"id": "86def", "name": "[Android] Crash on product detail"}]
+
+
+def test_a_doubtful_comment_names_the_task_it_would_land_on():
+    # For a comment the target IS the judgement being checked; a label without it asks
+    # for a blind click.
+    ask = {"name": "Saved cards unblocked", "intent": "comment", "decision": "UPDATE",
+           "target_id": "86def", "confidence": 0.62, "reason": "torn between two tasks"}
+    label = apply.ask_label(ask, BOARD)
+    assert "[Android] Crash on product detail" in label and "86def" in label
+    assert "Saved cards unblocked" in label and "torn between two tasks" in label
+    assert "0.62" in label
+
+
+def test_a_doubtful_create_says_so_and_names_no_task():
+    # A create lands on no existing task, even when the agent's reply named one.
+    ask = {"name": "New alerting", "intent": "create", "decision": "NEW",
+           "target_id": "86abc", "confidence": 0.5, "reason": "maybe new"}
+    label = apply.ask_label(ask, BOARD)
+    assert "create a new task" in label
+    assert "86abc" not in label and "[Payments] Fix saved cards" not in label
+
+
+def test_a_call_with_no_safe_action_keeps_its_label():
+    ask = {"name": "No match", "intent": "", "effect": "ask", "target_id": "",
+           "confidence": 0.95, "reason": "nothing on the board"}
+    assert apply.ask_label(ask, BOARD) == (
+        "no safe action · **No match** — nothing on the board (confidence 0.95)")

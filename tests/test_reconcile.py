@@ -140,6 +140,31 @@ def test_low_confidence_decision_goes_to_a_human():
     assert "ask a human" in md
 
 
+def test_a_doubtful_decision_shows_its_proposed_target():
+    # The person asked is checking the match itself, so the task it would land on is shown.
+    decided = [{"name": "Something vague", "affects": "?", "kind": "other",
+                "effect": "comment", "target_id": "86abc", "confidence": 0.3, "reason": "unsure"}]
+    md = decisions_markdown(decided, BOARD, threshold=0.8)
+    assert "ask a human" in md
+    assert "[Payments] Fix saved cards" in md and "86abc" in md
+
+
+def test_a_doubtful_update_in_the_plan_shows_its_proposed_target():
+    # A doubtful comment names the task it would land on, name and id. A doubtful create
+    # lands on none, even when the agent's reply named an id.
+    decisions = [
+        {"name": "Unclear one", "decision": "UPDATE", "target_id": "86def",
+         "confidence": 0.4, "reason": "torn between two"},
+        {"name": "Maybe new", "decision": "NEW", "target_id": "86abc",
+         "confidence": 0.5, "reason": "not sure it is new"},
+    ]
+    ask_lines = plan_markdown(decisions, BOARD, threshold=0.8).split("## Ask a human")[1].splitlines()
+    update_line = next(line for line in ask_lines if "Unclear one" in line)
+    new_line = next(line for line in ask_lines if "Maybe new" in line)
+    assert "[Android] Crash on product detail" in update_line and "86def" in update_line
+    assert "86abc" not in new_line and "[Payments] Fix saved cards" not in new_line
+
+
 def test_reconcile_on_empty_board_makes_no_decision_call():
     # nothing to match against means nothing to pay a model for
     out = reconcile([{"what": "anything"}], [])

@@ -15,7 +15,7 @@ from pathlib import Path
 from .clickup import add_comment, list_url, push_context, push_one
 from .client import WorkbenchError
 from .idempotency import IdempotencyStore, effect_key
-from .reconcile import GATE, split_by_confidence
+from .reconcile import GATE, split_by_confidence, target_label
 
 STORE_PATH = Path(__file__).resolve().parent.parent / "state" / "processed_effects.jsonl"
 
@@ -79,6 +79,25 @@ def as_effects(decisions: list, decided: list, threshold: float = GATE) -> tuple
         else:
             ask.append(d)
     return create, comment, ask
+
+
+def ask_label(item: dict, board: list) -> str:
+    """What a person reads before ticking a doubtful call: what it would do, and where.
+
+    A comment names the task it would land on, name and id — for a doubtful comment that
+    match is the judgement being checked, and a label without it asks for a blind click.
+    A create says it creates. With no safe action the label reads as it always has, and
+    the caller shows it as needing manual handling.
+    """
+    intent = item.get("intent", "")
+    if intent == "comment":
+        action = f"comment on {target_label(item.get('target_id', ''), board)}"
+    elif intent == "create":
+        action = "create a new task"
+    else:
+        action = intent or "no safe action"
+    return (f"{action} · **{item.get('name', '')}** — "
+            f"{item.get('reason', '')} (confidence {item.get('confidence', 0):.2f})")
 
 
 def _now() -> str:

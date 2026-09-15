@@ -146,6 +146,12 @@ def reconcile_decisions(decisions: list[dict], board: list[dict]) -> list[dict]:
     return out
 
 
+def target_label(target_id: str, board: list[dict]) -> str:
+    """The task a comment would land on, as the person checking it needs it: name and id."""
+    name = next((t.get("name", "") for t in board if t.get("id") == target_id), "")
+    return f"`{name}` (`{target_id}`)" if name else f"`{target_id}`"
+
+
 def decisions_markdown(decisions: list[dict], board: list[dict], threshold: float = GATE) -> str:
     """The decisions section of the board plan."""
     names = {t["id"]: t.get("name", "") for t in board}
@@ -161,8 +167,11 @@ def decisions_markdown(decisions: list[dict], board: list[dict], threshold: floa
                 f"- **{d['name']}** `{d.get('kind','other')}` → comment on `{target}` — {d.get('reason','')}"
             )
         else:
+            # The person asked is checking the match itself, so show where it would land.
+            proposed = (f", proposed target {target_label(d['target_id'], board)}"
+                        if d.get("target_id") else "")
             lines.append(
-                f"- **{d['name']}** `{d.get('kind','other')}` → ask a human "
+                f"- **{d['name']}** `{d.get('kind','other')}` → ask a human{proposed} "
                 f"(confidence {d.get('confidence',0):.2f}) — {d.get('reason','')}"
             )
     lines.append("")
@@ -225,8 +234,13 @@ def plan_markdown(decisions: list[dict], board: list[dict], threshold: float = G
     for d in ask:
         cause = d.get("escalation_cause", "")
         tag = f" `{cause}`" if cause and cause != "low_confidence" else ""
+        # A doubtful comment is shown with the task it would land on: that match is what
+        # the person is asked to check. A doubtful create lands on no task.
+        proposed = (f" → proposed target {target_label(d['target_id'], board)}"
+                    if d.get("decision") == "UPDATE" and d.get("target_id") else "")
         lines.append(
-            f"- **{d.get('name','')}**{tag} (confidence {d.get('confidence',0):.2f}) — {d.get('reason','')}"
+            f"- **{d.get('name','')}**{tag}{proposed} (confidence {d.get('confidence',0):.2f})"
+            f" — {d.get('reason','')}"
         )
     if not ask:
         lines.append("- nothing")
