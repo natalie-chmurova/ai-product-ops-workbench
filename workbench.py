@@ -115,11 +115,21 @@ def run(transcript_path: Path, board_path: Path | None = None) -> None:
     # The live board is the default on purpose: the demo's worth is that it talks to
     # a real tracker. A fixture is how an eval transcript gets a board from its own
     # world, and it is always asked for explicitly.
-    if board:
-        print(f"Stage 2.5/3  Reconciling against the board ({len(board)} open tasks)...")
+    #
+    # board_plan.md is written on every run — with a board, with an empty one, and with
+    # none — so the file never goes on describing an earlier meeting's plan.
+    if board or board_configured:
+        if board:
+            print(f"Stage 2.5/3  Reconciling against the board ({len(board)} open tasks)...")
+        else:
+            # board is [] here but a fixture or list *was* configured — "not configured"
+            # would be false, and the earlier "Board: ... empty" line would otherwise be
+            # contradicted a few lines later.
+            print("Stage 2.5/3  Board configured but empty — every point counts as new.")
         # The plan is about what would be created, and what gets created is a task —
         # so reconcile the ClickUp-ready list, not the raw action items. This also puts
         # extracted bugs through the board check, which the action items never did.
+        # An empty board costs no model call: every point is new without asking.
         decisions = reconcile(tasks, board)
         create, comment, ask = split_by_confidence(decisions)
         decided = reconcile_decisions(context.get("decisions", []), board)
@@ -127,13 +137,11 @@ def run(transcript_path: Path, board_path: Path | None = None) -> None:
         _write(OUTPUT_DIR / "board_plan.md", plan)
         print(f"  create {len(create)} · comment on existing {len(comment)} · ask a human {len(ask)}")
         print(f"  decisions: {len(decided)} (comment on existing work, never new tasks)")
-    elif board_configured:
-        # board is [] here but a fixture or list *was* configured — "not configured"
-        # would be false, and the earlier "Board: ... empty" line would otherwise be
-        # contradicted a few lines later.
-        print("Stage 2.5/3  Board configured but empty — every point counts as new.")
     else:
         print("Stage 2.5/3  No board configured — every point counts as new.")
+        _write(OUTPUT_DIR / "board_plan.md",
+               "No board was read for this run (no ClickUp list or board fixture configured), "
+               "so nothing was reconciled.\n")
 
     print("Stage 3/3  Rendering the report page...")
     report_html = render_report(transcript, tasks, sprint_md, triage_md, speakers_md)
