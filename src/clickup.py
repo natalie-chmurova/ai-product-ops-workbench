@@ -44,23 +44,51 @@ def list_url(list_id: str, team_id: str | None = None) -> str:
 
 
 def get_lists() -> list[dict]:
-    """Return the user's lists as [{id, name, space}] for a picker."""
+    """Return the workspace's lists as [{id, name, space}] for the picker.
+
+    The same two absences as get_tasks(): no CLICKUP_TEAM_ID -> [] (nothing to list);
+    configured but failing -> WorkbenchError, from whichever request failed. A picker
+    that reads as empty because a token expired offers no board, and a run without one
+    calls every meeting point new.
+    """
     team_id = os.environ.get("CLICKUP_TEAM_ID")
     if not team_id:
         return []
     out: list[dict] = []
-    spaces = requests.get(f"{API}/team/{team_id}/space", headers=_headers(), timeout=20)
-    for space in spaces.json().get("spaces", []):
+    for space in _workspace_read(f"{API}/team/{team_id}/space", "spaces").get("spaces", []):
         sid, sname = space["id"], space["name"]
-        r = requests.get(f"{API}/space/{sid}/list", headers=_headers(), timeout=20)
-        for lst in r.json().get("lists", []):
+        for lst in _workspace_read(f"{API}/space/{sid}/list", "lists").get("lists", []):
             out.append({"id": lst["id"], "name": lst["name"], "space": sname})
-        folders = requests.get(f"{API}/space/{sid}/folder", headers=_headers(), timeout=20)
-        for folder in folders.json().get("folders", []):
-            fr = requests.get(f"{API}/folder/{folder['id']}/list", headers=_headers(), timeout=20)
-            for lst in fr.json().get("lists", []):
+        for folder in _workspace_read(f"{API}/space/{sid}/folder", "folders").get("folders", []):
+            folder_lists = _workspace_read(f"{API}/folder/{folder['id']}/list", "lists")
+            for lst in folder_lists.get("lists", []):
                 out.append({"id": lst["id"], "name": f"{folder['name']} / {lst['name']}", "space": sname})
     return out
+
+
+def _workspace_read(url: str, what: str) -> dict:
+    """One GET for the list picker. Any failure raises, saying what failed and what to check."""
+    headers = _headers()
+    try:
+        r = requests.get(url, headers=headers, timeout=20)
+    except requests.RequestException as exc:
+        raise WorkbenchError(
+            f"Could not reach ClickUp to read the workspace's {what}: {exc}\n"
+            "  Check your network connection and try again."
+        ) from exc
+    hint = "  Check CLICKUP_API_TOKEN and CLICKUP_TEAM_ID in your .env."
+    if not 200 <= r.status_code < 300:
+        raise WorkbenchError(
+            f"Could not read the ClickUp workspace's {what} (HTTP {r.status_code}): "
+            f"{r.text[:120]}\n{hint}"
+        )
+    try:
+        return r.json()
+    except ValueError as exc:  # requests' JSONDecodeError is a ValueError
+        raise WorkbenchError(
+            f"ClickUp sent the workspace's {what} as something other than JSON "
+            f"(HTTP {r.status_code}): {r.text[:120]}\n{hint}"
+        ) from exc
 
 
 def get_tasks(list_id: str | None = None, include_closed: bool = False) -> list[dict]:

@@ -232,10 +232,10 @@ def render_apply(result: dict) -> None:
 
 @st.cache_data(show_spinner=False, ttl=300)
 def _cached_lists() -> list:
-    try:
-        return get_lists()
-    except Exception:
-        return []
+    # A failure is raised, not returned as []: the cache keeps results only, so a failing
+    # read is retried on the next rerun instead of being remembered as "no lists" for five
+    # minutes — and the picker can say why, rather than "No ClickUp list configured".
+    return get_lists()
 
 
 # ---------- input ----------
@@ -278,7 +278,14 @@ with left:
     # The board this plan is built against is the board it will be applied to. Choosing
     # the list afterwards is how a plan reconciled against one board gets written to
     # another — which is precisely the duplicate the reconcile stage exists to prevent.
-    lists = _cached_lists() if os.environ.get("CLICKUP_API_TOKEN") else []
+    lists, lists_error = [], ""
+    if os.environ.get("CLICKUP_API_TOKEN"):
+        try:
+            lists = _cached_lists()
+        except (WorkbenchError, ValueError) as exc:
+            # Configured but failing is not "no list configured": it is a board that cannot
+            # be read. Say why here; Generate refuses to run board-blind below.
+            lists_error = str(exc)
     default_id = os.environ.get("CLICKUP_LIST_ID", "")
     c_scope, c_date = st.columns([2, 1])
     if lists:
@@ -288,6 +295,10 @@ with left:
         choice = c_scope.selectbox("ClickUp list — reconciled against, and applied to",
                                    labels, index=idx, key="clickup_list")
         scope_id, scope_label = ids[labels.index(choice)], choice
+    elif lists_error:
+        scope_id, scope_label = "", ""
+        c_scope.error(f"{lists_error}\n\nGenerate stops with this error until the lists can be "
+                      "read: without the board, every point would count as new.")
     else:
         scope_id = default_id
         scope_label = "the list from .env" if default_id else "No ClickUp list configured"
@@ -314,6 +325,10 @@ with right:
 
     if run:
         try:
+            # A token that is set but cannot list the workspace is a failing board read:
+            # stop here, before any model call, rather than reconcile against nothing.
+            if lists_error:
+                raise WorkbenchError(lists_error)
             started = time.monotonic()
             with st.status("Working through the transcript...", expanded=True) as status:
                 # Read the board before any model call: a bad token fails here, for free.

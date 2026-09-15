@@ -117,3 +117,80 @@ def test_a_board_over_the_ceiling_raises_naming_the_count(monkeypatch):
         clickup.get_tasks("123")
     assert str(total) in str(exc.value)
     assert str(clickup.MAX_BOARD) in str(exc.value)
+
+
+# --- the list picker: no workspace is empty, a failing read is an error ---
+
+TEAM = "9018"
+WORKSPACE = {
+    f"{clickup.API}/team/{TEAM}/space": {"spaces": [{"id": "s1", "name": "Product"}]},
+    f"{clickup.API}/space/s1/list": {"lists": [{"id": "l1", "name": "Sprint"}]},
+    f"{clickup.API}/space/s1/folder": {"folders": [{"id": "f1", "name": "Roadmap"}]},
+    f"{clickup.API}/folder/f1/list": {"lists": [{"id": "l2", "name": "Q4"}]},
+}
+
+
+class NotJsonResponse(FakeResponse):
+    """A 200 whose body is not JSON — an HTML error page from a proxy, say."""
+
+    def json(self) -> dict:
+        raise clickup.requests.exceptions.JSONDecodeError("Expecting value", self.text, 0)
+
+
+def _workspace(monkeypatch, fail_on: str = "", failure=None) -> None:
+    """Serve WORKSPACE, except that the request for `fail_on` gets `failure`: a response
+    to return, or an exception to raise."""
+    monkeypatch.setenv("CLICKUP_API_TOKEN", "pk_test")
+    monkeypatch.setenv("CLICKUP_TEAM_ID", TEAM)
+
+    def fake_get(url, **kwargs):
+        if url == fail_on:
+            if isinstance(failure, Exception):
+                raise failure
+            return failure
+        return FakeResponse(200, WORKSPACE[url])
+
+    monkeypatch.setattr(clickup.requests, "get", fake_get)
+
+
+def test_no_workspace_means_no_lists_and_no_request(monkeypatch):
+    monkeypatch.delenv("CLICKUP_TEAM_ID", raising=False)
+
+    def no_call(*a, **k):
+        raise AssertionError("get_lists made a request with no workspace configured")
+
+    monkeypatch.setattr(clickup.requests, "get", no_call)
+    assert clickup.get_lists() == []
+
+
+def test_a_workspace_lists_its_lists_with_their_space(monkeypatch):
+    _workspace(monkeypatch)
+    assert clickup.get_lists() == [
+        {"id": "l1", "name": "Sprint", "space": "Product"},
+        {"id": "l2", "name": "Roadmap / Q4", "space": "Product"},
+    ]
+
+
+@pytest.mark.parametrize("url", list(WORKSPACE), ids=lambda url: url.replace(clickup.API, ""))
+def test_a_failing_list_read_raises_naming_the_status(monkeypatch, url):
+    # An expired token made the picker read as "No ClickUp list configured", and the run
+    # went ahead board-blind. Whichever of its requests fails, get_lists has to say so.
+    _workspace(monkeypatch, fail_on=url, failure=FakeResponse(401, text="Token invalid"))
+    with pytest.raises(WorkbenchError) as exc:
+        clickup.get_lists()
+    assert "401" in str(exc.value)
+    assert "CLICKUP_API_TOKEN" in str(exc.value)
+
+
+def test_a_network_error_listing_lists_is_a_workbench_error(monkeypatch):
+    _workspace(monkeypatch, fail_on=f"{clickup.API}/team/{TEAM}/space",
+               failure=clickup.requests.ConnectionError("down"))
+    with pytest.raises(WorkbenchError):
+        clickup.get_lists()
+
+
+def test_a_list_read_that_is_not_json_is_a_workbench_error(monkeypatch):
+    _workspace(monkeypatch, fail_on=f"{clickup.API}/folder/f1/list",
+               failure=NotJsonResponse(200, text="<html>502 Bad Gateway</html>"))
+    with pytest.raises(WorkbenchError):
+        clickup.get_lists()
