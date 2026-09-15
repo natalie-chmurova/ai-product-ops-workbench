@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.idempotency import IdempotencyStore, apply_batch, effect_key, normalize
+from src.idempotency import IdempotencyStore, apply_batch, create_key, effect_key, normalize
 
 VECTORS = json.loads(
     (Path(__file__).resolve().parent / "idempotency_vectors.json").read_text(encoding="utf-8")
@@ -30,6 +30,15 @@ def test_new_and_update_keys_differ_for_same_text():
 
 def test_update_key_depends_on_target():
     assert effect_key("UPDATE", "t1", "x") != effect_key("UPDATE", "t2", "x")
+
+
+def test_a_null_description_keys_like_no_description():
+    # A model that answers "description": null means there is no description. The n8n
+    # Idempotency check reads it as '' -- (j.description || '') -- so the key has to as
+    # well, or the store the app and n8n share holds two keys for one effect. The node
+    # itself is run in tests/test_n8n_parity.py; this holds on a machine without node.
+    name = "[Dev] Null description"
+    assert create_key({"name": name, "description": None}) == create_key({"name": name})
 
 
 def test_store_empty_is_not_duplicate(tmp_path):

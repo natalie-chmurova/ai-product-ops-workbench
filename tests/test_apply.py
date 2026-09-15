@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from src import apply
-from src.idempotency import IdempotencyStore
+from src.idempotency import IdempotencyStore, comment_key, create_key
 
 
 def _wire(monkeypatch, create_ok=True, comment_ok=True):
@@ -107,23 +107,13 @@ def test_a_network_error_on_a_comment_is_a_failed_effect_not_a_traceback(monkeyp
     assert summary["created"] == 1 and summary["commented"] == 2
     assert len(summary["failed"]) == 1 and "network error" in summary["failed"][0]
     kept = {json.loads(line)["key"] for line in path.read_text(encoding="utf-8").splitlines()}
-    assert kept == {apply.create_key(CREATE[0]), apply.comment_key(comments[0]),
-                    apply.comment_key(comments[2])}
+    assert kept == {create_key(CREATE[0]), comment_key(comments[0]), comment_key(comments[2])}
 
 
 def test_the_comment_says_which_meeting_and_when():
     text = apply.comment_text(COMMENT[0], "Weekly sync", "2026-09-09")
     assert text.startswith('From the meeting "Weekly sync" (2026-09-09):')
     assert "provider fixed the sandbox" in text
-
-
-def test_a_null_description_keys_like_no_description():
-    # A model that answers "description": null means there is no description. The n8n
-    # Idempotency check reads it as '' -- (j.description || '') -- so the app has to as
-    # well, or the store the two share holds two keys for one effect. The node itself is
-    # run in tests/test_n8n_parity.py; this holds on a machine without node.
-    name = "[Dev] Null description"
-    assert apply.create_key({"name": name, "description": None}) == apply.create_key({"name": name})
 
 
 def test_the_same_plan_on_another_day_is_still_a_no_op(monkeypatch, tmp_path):

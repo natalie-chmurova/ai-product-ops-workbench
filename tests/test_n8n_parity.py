@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from scripts.sync_n8n_match_prompt import NODE, find_node, patch, render
-from src.apply import comment_key, create_key
+from src.idempotency import comment_key, create_key
 from src.clickup import _task_row
 from src.reconcile import board_summary, parse_decision, reconcile
 

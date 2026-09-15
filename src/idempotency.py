@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Idempotency for the meeting -> ClickUp sync.
+"""Idempotency for the meeting -> ClickUp sync: the key of an effect, and the store.
 
 Deterministic guard so re-processing the same meeting does not create
 duplicate tasks or comments. Keyed on the *applied effect* (an UPDATE comment
 on a task, or a NEW task), computed after the Match agent's decision.
 
-The key spec is mirrored byte-for-byte in the n8n "Idempotency check" and
-"Mark processed" Code nodes; tests/idempotency_vectors.json pins the parity.
+This one module answers "what is this effect's key": which text a point contributes,
+how that text is normalised and hashed, and the key of creating a task or of commenting
+on one. The n8n "Idempotency check" Code node computes the same key from the items
+"Parse decision" builds; tests/test_n8n_parity.py runs that node's own code to check
+that the two agree, and tests/idempotency_vectors.json pins the formula.
 """
 
 from __future__ import annotations
@@ -33,6 +36,32 @@ def effect_key(kind: str, target: str, content: str) -> str:
     else:
         payload = f"NEW|{normalize(content)}"
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
+def comment_body(item: dict) -> str:
+    """What the comment is about — and the only thing its key is computed from."""
+    return (item.get("detail") or item.get("description") or item.get("name") or "").strip()
+
+
+def create_key(task: dict) -> str:
+    """The key of creating `task` as a new task."""
+    # A null description is no description. Read it the way comment_body reads its
+    # fields and the n8n Idempotency check reads it, (j.description || ''): str(None)
+    # would hash the word "None" and give one effect two keys in the store they share.
+    return effect_key("NEW", "", f"{task.get('name', '')} {task.get('description') or ''}".strip())
+
+
+def comment_key(item: dict) -> str:
+    """The key of commenting on `item`'s target task: keyed on the body, never on the
+    rendered comment.
+
+    The rendered text carries the meeting title and date, so hashing it would hand the
+    same effect a fresh key on a different day and comment twice. It would also disagree
+    with the n8n Idempotency check node, which hashes the item body alone — and two
+    stores that compute different keys for one effect are not one store, which is the
+    whole reason both write to state/processed_effects.jsonl.
+    """
+    return effect_key("UPDATE", item.get("target_id", ""), comment_body(item))
 
 
 class IdempotencyStore:

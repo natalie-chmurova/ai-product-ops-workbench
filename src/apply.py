@@ -14,15 +14,10 @@ from pathlib import Path
 
 from .clickup import add_comment, list_url, push_context, push_one
 from .client import WorkbenchError
-from .idempotency import IdempotencyStore, effect_key
+from .idempotency import IdempotencyStore, comment_body, comment_key, create_key
 from .reconcile import GATE, split_by_confidence, target_label
 
 STORE_PATH = Path(__file__).resolve().parent.parent / "state" / "processed_effects.jsonl"
-
-
-def comment_body(item: dict) -> str:
-    """What the comment is about — and the only thing its key is computed from."""
-    return (item.get("detail") or item.get("description") or item.get("name") or "").strip()
 
 
 def comment_text(item: dict, meeting_title: str, when: str) -> str:
@@ -32,25 +27,6 @@ def comment_text(item: dict, meeting_title: str, when: str) -> str:
     today's date, and it is not part of the key.
     """
     return f'From the meeting "{meeting_title}" ({when}):\n{comment_body(item)}'
-
-
-def create_key(task: dict) -> str:
-    # A null description is no description. Read it the way comment_body reads its
-    # fields and the n8n Idempotency check reads it, (j.description || ''): str(None)
-    # would hash the word "None" and give one effect two keys in the store they share.
-    return effect_key("NEW", "", f"{task.get('name', '')} {task.get('description') or ''}".strip())
-
-
-def comment_key(item: dict) -> str:
-    """Keyed on the body, never on the rendered comment.
-
-    The rendered text carries the meeting title and date, so hashing it would hand the
-    same effect a fresh key on a different day and comment twice. It would also disagree
-    with the n8n Idempotency check node, which hashes the item body alone — and two
-    stores that compute different keys for one effect are not one store, which is the
-    whole reason both write to this file.
-    """
-    return effect_key("UPDATE", item.get("target_id", ""), comment_body(item))
 
 
 def as_effects(decisions: list, decided: list, threshold: float = GATE) -> tuple:
