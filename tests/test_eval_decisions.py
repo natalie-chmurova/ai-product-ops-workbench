@@ -8,10 +8,10 @@ parser, both copied from `src/reconcile.py`; the copy already drifted once
 call for every ground-truth point, and checks both what gets sent to the
 model and how a reply is scored.
 
-Building `evals/eval_decisions.py` calls `main()`, never module import, to do
-its work: importing it must not touch the real `.env` or the real
-`evals/decision_results.md`. See `_run_eval` below for how each test keeps
-both out of harm's way.
+`decide()` is gone with no replacement wrapper, so the only way to exercise
+the eval's real behaviour is to call `main()`. Importing the module by itself
+must not touch the real `.env` or the real `evals/decision_results.md` — see
+`_run_eval` below for how each test keeps both out of harm's way.
 """
 
 from __future__ import annotations
