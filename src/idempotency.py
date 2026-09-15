@@ -20,9 +20,31 @@ import re
 from pathlib import Path
 
 
+# Whitespace as JavaScript's \s defines it, which is also what String.prototype.trim()
+# strips: the n8n Idempotency check normalises with it, and Parse decision trims the
+# comment body with it. Python's own \s and str.strip() differ on six characters -- they
+# take U+001C-U+001F and U+0085 and leave U+FEFF out -- so a text holding one of those
+# would key differently on the two sides of one store. The node is deployed live and
+# changing it means a re-import, so its definition wins.
+_WHITESPACE = "".join(map(chr, (
+    0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x20,    # tab, LF, VT, FF, CR, space
+    0xA0, 0x1680, *range(0x2000, 0x200B),  # no-break, ogham and U+2000-U+200A spaces
+    0x2028, 0x2029,                        # line and paragraph separators
+    0x202F, 0x205F, 0x3000,                # narrow no-break, math and ideographic spaces
+    0xFEFF,                                # zero width no-break space (byte order mark)
+)))
+_WHITESPACE_RUN = re.compile(f"[{re.escape(_WHITESPACE)}]+")
+
+
+def _trim(text: str) -> str:
+    """Strip both ends as JavaScript's trim() does."""
+    return text.strip(_WHITESPACE)
+
+
 def normalize(text: str) -> str:
-    """Lowercase, collapse any whitespace run to one space, then trim."""
-    return re.sub(r"\s+", " ", (text or "").lower()).strip()
+    """Lowercase, collapse any whitespace run to one space, then trim -- whitespace as the
+    n8n node's JavaScript defines it."""
+    return _trim(_WHITESPACE_RUN.sub(" ", (text or "").lower()))
 
 
 def effect_key(kind: str, target: str, content: str) -> str:
@@ -39,8 +61,9 @@ def effect_key(kind: str, target: str, content: str) -> str:
 
 
 def comment_body(item: dict) -> str:
-    """What the comment is about — and the only thing its key is computed from."""
-    return (item.get("detail") or item.get("description") or item.get("name") or "").strip()
+    """What the comment is about — and the only thing its key is computed from. Trimmed
+    as Parse decision trims it: (item.description || item.name || '').trim()."""
+    return _trim(item.get("detail") or item.get("description") or item.get("name") or "")
 
 
 def create_key(task: dict) -> str:
@@ -48,7 +71,8 @@ def create_key(task: dict) -> str:
     # A null description is no description. Read it the way comment_body reads its
     # fields and the n8n Idempotency check reads it, (j.description || ''): str(None)
     # would hash the word "None" and give one effect two keys in the store they share.
-    return effect_key("NEW", "", f"{task.get('name', '')} {task.get('description') or ''}".strip())
+    # No strip here: normalize trims, with the node's whitespace.
+    return effect_key("NEW", "", f"{task.get('name', '')} {task.get('description') or ''}")
 
 
 def comment_key(item: dict) -> str:
