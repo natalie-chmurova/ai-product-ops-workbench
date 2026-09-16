@@ -19,7 +19,7 @@ from pathlib import Path
 import streamlit as st
 from dotenv import load_dotenv
 
-from src.apply import apply_plan, as_effects, ask_label
+from src.apply import apply_plan
 from src.artifacts import (
     build_bug_triage,
     build_speaker_summary,
@@ -30,8 +30,8 @@ from src.assignees import roster_line, team_roster
 from src.clickup import get_lists, get_tasks
 from src.client import WorkbenchError
 from src.extract import extract_context
-from src.plan import GATE
-from src.reconcile import decisions_markdown, plan_markdown, reconcile, reconcile_decisions
+from src.plan import Plan, ask_label, build_plan, plan_markdown
+from src.reconcile import reconcile, reconcile_decisions
 
 load_dotenv()
 
@@ -170,22 +170,28 @@ def render_apply(result: dict) -> None:
     """The plan, and one button that applies it — once, to the board it was built on."""
     if not os.environ.get("CLICKUP_API_TOKEN"):
         return  # integration not configured — hide the control entirely
-    scope_id = result.get("scope_id")
-    if not scope_id:
+    plan = result.get("plan")
+    if not isinstance(plan, Plan):
+        # an older result in session_state, from before the plan was one value
+        st.caption("Generate again to build a plan for this board.")
+        return
+    if not plan.scope:
         st.caption("No ClickUp list was selected for this run, so the plan cannot be applied.")
         return
-    # Both kinds of decision, one plan. A meeting decision that was only rendered in the
-    # tab and never sent would make the tab a promise the button does not keep.
-    create, comment, ask = as_effects(result["decisions"], result.get("decided", []))
     # The plan belongs to the board it was reconciled against. If the picker has moved
     # since, applying would write into a board this plan never saw.
-    stale = st.session_state.get("scope_choice_id", scope_id) != scope_id
+    stale = st.session_state.get("scope_choice_id", plan.scope) != plan.scope
+    # The same counts the Board plan tab shows, off the same value: while the tab counted
+    # tasks and this caption counted tasks and meeting decisions, one run read "ask a
+    # human 2" in the tab and "ask a human 4" here.
+    counts = plan.counts
 
     with st.container(border=True):
         st.caption(
-            f"Plan for **{result.get('scope_label', scope_id)}** · create **{len(create)}** · "
-            f"comment on existing **{len(comment)}** · ask a human **{len(ask)}** "
-            f"(gate {GATE:.2f})"
+            f"Plan for **{result.get('scope_label', plan.scope)}** · "
+            f"create **{counts['create']}** · "
+            f"comment on existing **{counts['comment']}** · "
+            f"ask a human **{counts['ask']}** (gate {plan.gate:.2f})"
         )
         if stale:
             st.warning(
@@ -196,20 +202,17 @@ def render_apply(result: dict) -> None:
         # Items below the gate are applied only when a person ticks them, one by one,
         # the way the agent intended. This is the human in the loop, not auto-apply.
         approved = []
-        for i, d in enumerate(ask):
-            intent = d.get("intent", "")
-            # A doubtful comment names the task it would land on: that match is what the
-            # person is being asked to check.
-            label = ask_label(d, result.get("board", []))
-            if intent and st.checkbox(label, key=f"ask_{i}"):
-                approved.append(d)
-            elif not intent:
+        for i, effect in enumerate(plan.ask):
+            # A doubtful comment names the task it would land on, and a guardrail cause
+            # says what fired: that match is what the person is being asked to check.
+            label = ask_label(effect)
+            if effect.intent and st.checkbox(label, key=f"ask_{i}"):
+                approved.append(effect)
+            elif not effect.intent:
                 st.caption(f"⚠️ {label} — needs manual handling")
 
         if st.button("📤 Apply plan to ClickUp", use_container_width=True, key="apply_plan",
                      disabled=stale):
-            extra_create = [d for d in approved if d["intent"] == "create"]
-            extra_comment = [d for d in approved if d["intent"] == "comment"]
             # The meeting date as the input shows it now, not as it was at Generate: a date
             # corrected after the plan was built is the one the person means. The date is in
             # no key, so reading it here cannot make an effect apply twice.
@@ -217,7 +220,7 @@ def render_apply(result: dict) -> None:
             try:
                 with st.spinner("Applying the plan…"):
                     summary = apply_plan(
-                        create + extra_create, comment + extra_comment, scope_id,
+                        plan, approved,
                         meeting_title=result["context"].get("meeting_title", ""),
                         when=meeting_date.isoformat() if meeting_date else None,
                     )
@@ -356,17 +359,22 @@ with right:
                 triage_md = build_bug_triage(context)
                 speakers_md = build_speaker_summary(context, transcript, roster)
                 st.write(f"Stage 2.5/3 — reconciling against the board ({len(board)} tasks)")
-                decisions = reconcile(tasks, board)
-                decided = reconcile_decisions(context.get("decisions", []), board)
-                plan_md = plan_markdown(decisions, board) + "\n" + decisions_markdown(decided, board)
+                # One plan, built once here: the tab below, the caption over the Apply
+                # button and the button itself all read this one value, so they cannot
+                # count the same run differently or send what the tab never showed.
+                plan = build_plan(
+                    reconcile(tasks, board),
+                    reconcile_decisions(context.get("decisions", []), board),
+                    board, scope_id,
+                )
                 elapsed = time.monotonic() - started
                 st.write(f"Stage 3/3 — done in {elapsed:.0f}s")
                 status.update(label=f"Done ✓ · {elapsed:.0f}s", state="complete", expanded=False)
             st.session_state["result"] = {
                 "context": context, "tasks": tasks, "sprint": sprint_md, "triage": triage_md,
                 "speakers": speakers_md, "elapsed": elapsed,
-                "board": board, "decisions": decisions, "decided": decided, "plan": plan_md,
-                "scope_id": scope_id, "scope_label": scope_label,
+                "board": board, "plan": plan, "board_plan_md": plan_markdown(plan),
+                "scope_label": scope_label,
             }
             # A fresh plan means fresh choices for the items below the gate.
             for k in [k for k in st.session_state if str(k).startswith("ask_")]:
@@ -388,7 +396,7 @@ with right:
             render_tasks(result["tasks"])
         with tab_plan:
             # older results in session_state predate the plan
-            st.markdown(result.get("plan") or "_Re-run to reconcile against the board._")
+            st.markdown(result.get("board_plan_md") or "_Re-run to reconcile against the board._")
         with tab_sprint:
             st.markdown(result["sprint"])
         with tab_triage:

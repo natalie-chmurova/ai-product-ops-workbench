@@ -1,79 +1,32 @@
-"""Apply a board plan to the tracker — create what is new, comment on what exists — once.
+"""Apply a plan to the tracker — create what is new, comment on what exists — once.
 
-The plan is a set of effects. Each one is keyed the way the n8n Idempotency check node
-keys it and checked against the same store, so the app and the workflow share one
-memory of what has already been applied. A key is committed only after its effect
-succeeded; a failure leaves the effect free to be retried.
+The plan is a set of effects, built by `src/plan.py` and carrying the one list it was
+reconciled against. Each effect is keyed the way the n8n Idempotency check node keys it
+and checked against the same store, so the app and the workflow share one memory of what
+has already been applied. A key is committed only after its effect succeeded; a failure
+leaves the effect free to be retried.
 """
 
 from __future__ import annotations
 
-import os
 from datetime import date, datetime, timezone
 from pathlib import Path
 
 from .clickup import add_comment, list_url, push_context, push_one
 from .client import WorkbenchError
 from .idempotency import IdempotencyStore, comment_body, comment_key, create_key
-from .reconcile import GATE, split_by_confidence, target_label
+from .plan import Plan
 
 STORE_PATH = Path(__file__).resolve().parent.parent / "state" / "processed_effects.jsonl"
 
 
-def comment_text(item: dict, meeting_title: str, when: str) -> str:
+def comment_text(point: dict, meeting_title: str, when: str) -> str:
     """The comment a matched task receives: where it came from, then what was said.
 
     `when` is the date of the MEETING, which the person running this supplies. It is not
     today's date, and it is not part of the key.
     """
-    return f'From the meeting "{meeting_title}" ({when}):\n{comment_body(item)}'
-
-
-def as_effects(decisions: list, decided: list, threshold: float = GATE) -> tuple:
-    """One (create, comment, ask) plan over both kinds of decision.
-
-    A reconciled task carries `decision` NEW/UPDATE; a reconciled meeting decision carries
-    `effect` comment/ask and structurally cannot be a create. Two shapes, the same three
-    outcomes — so each item is stamped with `intent` and the caller stops caring which
-    kind it was. Without this the plan tab showed decisions as comments and the button
-    never sent them.
-    """
-    create, comment, ask = split_by_confidence(decisions, threshold)
-    for d in create:
-        d["intent"] = "create"
-    for d in comment:
-        d["intent"] = "comment"
-    for d in ask:
-        d["intent"] = "create" if d.get("decision") == "NEW" else (
-            "comment" if d.get("target_id") else "")
-
-    for d in decided:
-        # A decision comments on work that exists, or goes to a human. Never a new task.
-        d["intent"] = "comment" if d.get("target_id") else ""
-        if d.get("effect") == "comment" and d.get("confidence", 0) >= threshold and d["intent"]:
-            comment.append(d)
-        else:
-            ask.append(d)
-    return create, comment, ask
-
-
-def ask_label(item: dict, board: list) -> str:
-    """What a person reads before ticking a doubtful call: what it would do, and where.
-
-    A comment names the task it would land on, name and id — for a doubtful comment that
-    match is the judgement being checked, and a label without it asks for a blind click.
-    A create says it creates. With no safe action the label reads as it always has, and
-    the caller shows it as needing manual handling.
-    """
-    intent = item.get("intent", "")
-    if intent == "comment":
-        action = f"comment on {target_label(item.get('target_id', ''), board)}"
-    elif intent == "create":
-        action = "create a new task"
-    else:
-        action = intent or "no safe action"
-    return (f"{action} · **{item.get('name', '')}** — "
-            f"{item.get('reason', '')} (confidence {item.get('confidence', 0):.2f})")
+    return f'From the meeting "{meeting_title}" ({when}):\n{comment_body(point)}'
 
 
 def _now() -> str:
@@ -81,17 +34,27 @@ def _now() -> str:
 
 
 def apply_plan(
-    create: list[dict],
-    comment: list[dict],
-    list_id: str | None = None,
+    plan: Plan,
+    approved: list = (),
     store: IdempotencyStore | None = None,
     meeting_title: str = "",
     when: str | None = None,
 ) -> dict:
-    """Create every `create` item and comment on every `comment` item, each at most once."""
-    list_id = list_id or os.environ.get("CLICKUP_LIST_ID")
-    if not list_id:
-        raise WorkbenchError("No target list. Set CLICKUP_LIST_ID in your .env or pick a list.")
+    """Write `plan` to the list it was built against, each effect at most once.
+
+    `approved` is the asks a person ticked; each is applied as the effect the agent
+    intended, and one with no safe intent is not applied at all.
+    """
+    if not plan.scope:
+        # No fallback to a list from the environment: a plan written to a board it was
+        # never reconciled against duplicates the work already on that board.
+        raise WorkbenchError(
+            "This plan was built without a ClickUp list, so there is nothing to apply it "
+            "to. Pick a list and generate again."
+        )
+    ticked = [e for e in approved if e.intent]
+    create = list(plan.create) + [e for e in ticked if e.intent == "create"]
+    comment = list(plan.comment) + [e for e in ticked if e.intent == "comment"]
     if not create and not comment:
         raise WorkbenchError("The plan has nothing to apply.")
     store = store or IdempotencyStore(STORE_PATH)
@@ -99,44 +62,45 @@ def apply_plan(
     # has none — and it never reaches the key, so the fallback cannot cause a second
     # comment tomorrow.
     when = when or date.today().isoformat()
-    # The plan was reconciled against exactly one list, list_id, so every create is
-    # written there — never to a second, separately-configured backlog list. Discard the
-    # backlog id from push_context; a backlog-destined task still gets its "backlog" tag
-    # from push_one, it just never leaves the list this run belongs to.
+    # The plan was reconciled against exactly one list, so every create is written there
+    # — never to a second, separately-configured backlog list. Discard the backlog id
+    # from push_context; a backlog-destined task still gets its "backlog" tag from
+    # push_one, it just never leaves the list this run belongs to.
     members, aliases, _backlog_id = push_context()
 
     summary = {
         "created": 0, "commented": 0, "skipped": 0, "assigned": 0, "backlog": 0,
-        "failed": [], "total": len(create) + len(comment), "list_url": list_url(list_id),
+        "failed": [], "total": len(create) + len(comment),
+        "list_url": list_url(plan.scope),
     }
 
-    for task in create:
-        key = create_key(task)
+    for effect in create:
+        key = create_key(effect.point)
         if store.is_duplicate(key):
             summary["skipped"] += 1
             continue
         store.mark_seen(key)
-        res = push_one(task, list_id, members, aliases, None)
+        res = push_one(effect.point, plan.scope, members, aliases, None)
         if res["ok"]:
             store.commit(key, {"kind": "NEW", "target": None,
-                               "preview": task.get("name", "")[:60], "ts": _now(), "source": "app"})
+                               "preview": effect.name[:60], "ts": _now(), "source": "app"})
             summary["created"] += 1
             summary["assigned"] += res["assigned"]
             summary["backlog"] += res["backlog"]
         else:
             summary["failed"].append(res["info"])
 
-    for item in comment:
-        text = comment_text(item, meeting_title, when)
-        key = comment_key(item)
+    for effect in comment:
+        text = comment_text(effect.point, meeting_title, when)
+        key = comment_key(effect.point)
         if store.is_duplicate(key):
             summary["skipped"] += 1
             continue
         store.mark_seen(key)
-        ok, info = add_comment(item["target_id"], text)
+        ok, info = add_comment(effect.target_id, text)
         if ok:
-            store.commit(key, {"kind": "UPDATE", "target": item["target_id"],
-                               "preview": item.get("name", "")[:60], "ts": _now(), "source": "app"})
+            store.commit(key, {"kind": "UPDATE", "target": effect.target_id,
+                               "preview": effect.name[:60], "ts": _now(), "source": "app"})
             summary["commented"] += 1
         else:
             summary["failed"].append(info)
