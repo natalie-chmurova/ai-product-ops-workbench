@@ -31,9 +31,9 @@ def _plan(points=(CREATE, COMMENT), scope="list1", meeting_decisions=()):
 def _wire(monkeypatch, create_ok=True, comment_ok=True):
     """The tracker faked at the ClickUp module's edge; returns what reached it."""
     created, commented = [], []
-    monkeypatch.setattr(apply, "push_context", lambda: ([], {}, None))
+    monkeypatch.setattr(apply, "create_context", lambda: ([], {}, None))
     monkeypatch.setattr(
-        apply, "push_one",
+        apply, "create_one",
         lambda task, list_id, members, aliases, backlog_id: (
             created.append((task, list_id, backlog_id)) or
             {"ok": create_ok, "info": task["name"], "assigned": False, "backlog": False}
@@ -113,8 +113,8 @@ def test_a_failure_is_not_a_skip_and_a_repeat_is_not_an_already_applied(monkeypa
     # the person read "skipped 1 already applied" for an effect the store had never seen,
     # and the refused create vanished from the counts altogether.
     created, commented = [], []
-    monkeypatch.setattr(apply, "push_context", lambda: ([], {}, None))
-    monkeypatch.setattr(apply, "push_one", lambda task, list_id, members, aliases, backlog: (
+    monkeypatch.setattr(apply, "create_context", lambda: ([], {}, None))
+    monkeypatch.setattr(apply, "create_one", lambda task, list_id, members, aliases, backlog: (
         created.append(task) or {"ok": False, "info": "no permission on that list",
                                  "assigned": False, "backlog": False}))
     monkeypatch.setattr(apply, "add_comment", lambda task_id, text: (
@@ -152,9 +152,9 @@ def test_a_create_reaches_the_tracker_as_the_point_it_was_drafted_from(monkeypat
 
 def test_a_backlog_create_still_goes_to_the_scope_list(monkeypatch, tmp_path):
     # A bug destined for the backlog is still written to the list this run belongs to —
-    # push_one gets the scope list and no backlog id, so it only tags the task.
+    # create_one gets the scope list and no backlog id, so it only tags the task.
     created, _ = _wire(monkeypatch)
-    monkeypatch.setattr(apply, "push_context", lambda: ([], {}, "backlog-list"))
+    monkeypatch.setattr(apply, "create_context", lambda: ([], {}, "backlog-list"))
     backlog = dict(CREATE, destination="backlog")
     apply.apply_plan(_plan([backlog]), store=IdempotencyStore(tmp_path / "s.jsonl"),
                      when="2026-09-09")
@@ -185,8 +185,8 @@ def test_a_network_error_on_a_comment_is_a_failed_effect_not_a_traceback(monkeyp
 
     from src import clickup
 
-    monkeypatch.setattr(apply, "push_context", lambda: ([], {}, None))
-    monkeypatch.setattr(apply, "push_one", lambda task, list_id, members, aliases, backlog_id: {
+    monkeypatch.setattr(apply, "create_context", lambda: ([], {}, None))
+    monkeypatch.setattr(apply, "create_one", lambda task, list_id, members, aliases, backlog_id: {
         "ok": True, "info": task["name"], "assigned": False, "backlog": False})
     for target in ("86a", "86c"):
         transport.answers(f"{clickup.API}/task/{target}/comment", {"id": f"c{target}"})

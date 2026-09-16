@@ -418,15 +418,15 @@ def _create_task(list_id: str, task: dict, assignee_id: str | None = None) -> tu
     return (True, tagless["name"]) if ok else (False, reason)
 
 
-def push_context() -> tuple[list[dict], dict[str, str], str | None]:
-    """Members, alias map and backlog list — read once per batch of writes."""
+def create_context() -> tuple[list[dict], dict[str, str], str | None]:
+    """Members, alias map and backlog list — read once per batch of creates."""
     # A newly found defect belongs in the backlog, not in the running sprint. With no
     # backlog list configured everything still lands in the main list, tagged with
     # the intended destination, so nothing is silently lost.
     return members_if_readable(), alias_map(), os.environ.get("CLICKUP_BACKLOG_LIST_ID")
 
 
-def push_one(
+def create_one(
     task: dict,
     list_id: str,
     members: list[dict],

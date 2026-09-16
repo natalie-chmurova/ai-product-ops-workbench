@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from .clickup import add_comment, list_url, push_context, push_one
+from .clickup import add_comment, create_context, create_one, list_url
 from .client import WorkbenchError
 from .idempotency import (
     ALREADY_APPLIED,
@@ -93,9 +93,9 @@ def apply_plan(
     when = when or date.today().isoformat()
     # The plan was reconciled against exactly one list, so every create is written there
     # — never to a second, separately-configured backlog list. Discard the backlog id
-    # from push_context; a backlog-destined task still gets its "backlog" tag from
-    # push_one, it just never leaves the list this run belongs to.
-    members, aliases, _backlog_id = push_context()
+    # from create_context; a backlog-destined task still gets its "backlog" tag from
+    # create_one, it just never leaves the list this run belongs to.
+    members, aliases, _backlog_id = create_context()
 
     summary = {
         "created": 0, "commented": 0, ALREADY_APPLIED: 0, REPEATED: 0,
@@ -108,7 +108,7 @@ def apply_plan(
         # own; here there is only the writing and the counting.
         attempt = store.apply_once(
             create_key(effect.point),
-            lambda: _push(effect, plan.scope, members, aliases),
+            lambda: _create(effect, plan.scope, members, aliases),
             kind="NEW", target=None, preview=effect.name, source=SOURCE)
         _tally(summary, attempt, "created")
         if attempt.outcome == APPLIED:
@@ -128,11 +128,11 @@ def apply_plan(
     return summary
 
 
-def _push(effect, scope: str, members: list, aliases: dict) -> tuple:
+def _create(effect, scope: str, members: list, aliases: dict) -> tuple:
     """Create one task, and report it the way every effect reports itself: (ok, info).
 
     On failure the info is the reason, as every other write in this pipeline answers —
     so a caller counting failures never has to know which kind of effect it was reading.
     """
-    res = push_one(effect.point, scope, members, aliases, None)
+    res = create_one(effect.point, scope, members, aliases, None)
     return res["ok"], res if res["ok"] else res["info"]

@@ -79,37 +79,37 @@ def test_a_refused_create_is_a_reason_naming_the_status(transport):
     assert "500" in info and "boom" in info
 
 
-# --- push_one: the owner, the list, the marker tags --------------------------
+# --- create_one: the owner, the list, the marker tags ------------------------
 
-def test_push_one_routes_a_backlog_bug_and_tags_it(transport):
+def test_create_one_routes_a_backlog_bug_and_tags_it(transport):
     transport.answers(BACKLOG, CREATED)
     task = {"name": "x", "owner": "Dana", "type": "bug", "destination": "backlog",
             "tags": ["search"]}
-    res = clickup.push_one(task, "main", [], {"dana": "42"}, "backlog-list")
+    res = clickup.create_one(task, "main", [], {"dana": "42"}, "backlog-list")
     assert transport.calls[0].url == BACKLOG
     assert transport.calls[0].body["assignees"] == [42]
     assert transport.calls[0].body["tags"] == ["search", "bug", "backlog"]
     assert res == {"ok": True, "info": "x", "assigned": True, "backlog": True}
 
 
-def test_push_one_without_a_backlog_list_keeps_the_main_list(transport):
+def test_create_one_without_a_backlog_list_keeps_the_main_list(transport):
     transport.answers(MAIN, CREATED)
-    res = clickup.push_one({"name": "x", "destination": "backlog"}, "main", [], {}, None)
+    res = clickup.create_one({"name": "x", "destination": "backlog"}, "main", [], {}, None)
     assert transport.calls[0].url == MAIN
     assert res["backlog"] is True          # the intent is still reported
     assert res["assigned"] is False
 
 
-def test_push_one_does_not_mutate_the_caller_task(transport):
+def test_create_one_does_not_mutate_the_caller_task(transport):
     transport.answers(MAIN, CREATED)
     task = {"name": "x", "type": "bug", "tags": []}
-    clickup.push_one(task, "main", [], {}, None)
+    clickup.create_one(task, "main", [], {}, None)
     assert task["tags"] == []
 
 
-def test_push_one_reports_failure(transport):
+def test_create_one_reports_failure(transport):
     transport.answers(MAIN, status=500, text="boom")
-    res = clickup.push_one({"name": "x"}, "main", [], {}, None)
+    res = clickup.create_one({"name": "x"}, "main", [], {}, None)
     assert res["ok"] is False and "500" in res["info"]
     assert res["assigned"] is False and res["backlog"] is False
 
