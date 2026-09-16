@@ -1,6 +1,7 @@
-"""Owner → assignee resolution (pure logic, no API)."""
+"""Owner → assignee resolution (pure logic), and the one live roster it is built from."""
 
-from src.assignees import build_roster, normalize, resolve_owner, roster_line
+from src import clickup
+from src.assignees import build_roster, normalize, resolve_owner, roster_line, team_roster
 
 MEMBERS = [
     {"id": "222150225", "name": "Natallia Chmurova"},
@@ -76,3 +77,48 @@ def test_roster_empty_when_nothing_configured():
 def test_roster_line_is_prompt_ready():
     assert roster_line(build_roster([], RAW_ALIASES)) == "Dana, Priya"
     assert roster_line([]) == ""
+
+
+# --- the live roster: read from the tracker, and never a raise -----------------
+
+TEAMS = f"{clickup.API}/team"
+
+
+def _configured(monkeypatch) -> None:
+    monkeypatch.setenv("CLICKUP_TEAM_ID", "9018")
+    monkeypatch.setenv("OWNER_ALIASES", RAW_ALIASES)
+
+
+def test_the_live_roster_is_the_tracker_s_members_and_the_aliases(monkeypatch, transport):
+    _configured(monkeypatch)
+    transport.answers(TEAMS, {"teams": [{"id": "9018", "members": [
+        {"user": {"id": 999, "username": "Marco Rossi"}}]}]})
+    assert team_roster() == [{"name": "Marco Rossi", "id": "999"},
+                             {"name": "Dana", "id": "222150225"},
+                             {"name": "Priya", "id": "222150225"}]
+
+
+def test_a_roster_the_tracker_cannot_be_reached_for_is_the_aliases(monkeypatch, transport):
+    # The roster is read before every run, and it is not what a run is for: raising here
+    # would stop a transcript that needs no tracker at all. The aliases still name people,
+    # and with none of them the prompts read names out of the transcript.
+    _configured(monkeypatch)
+    transport.drops(TEAMS)
+    assert [r["name"] for r in team_roster()] == ["Dana", "Priya"]
+
+
+def test_a_roster_the_tracker_answered_strangely_is_the_aliases(monkeypatch, transport):
+    # Every way a member read can fail degrades the same way — a refused token, a dropped
+    # connection, and a 200 that is not the shape a reader can read.
+    _configured(monkeypatch)
+    transport.answers(TEAMS, status=401, text="Token invalid")
+    assert [r["name"] for r in team_roster()] == ["Dana", "Priya"]
+    transport.answers(TEAMS, {"teams": "none"})
+    assert [r["name"] for r in team_roster()] == ["Dana", "Priya"]
+
+
+def test_an_unconfigured_roster_asks_the_tracker_nothing(monkeypatch, transport):
+    monkeypatch.delenv("CLICKUP_TEAM_ID", raising=False)
+    monkeypatch.setenv("OWNER_ALIASES", RAW_ALIASES)
+    assert [r["name"] for r in team_roster()] == ["Dana", "Priya"]
+    assert transport.calls == []
