@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,7 @@ from src.idempotency import (
     effect_key,
     normalize,
 )
+from src.client import WorkbenchError
 from src.reconcile import reconcile, reconcile_decisions
 
 # The reference vectors. Those holding U+001C-U+001F, U+0085 or U+FEFF, on which Python's
@@ -117,7 +119,11 @@ def test_reconcile_says_what_every_decision_affects(monkeypatch):
 
 # --- the file the store and the n8n nodes share ---
 
-CHECKOUT = Path(__file__).resolve().parent.parent
+# Where this checkout is, asked of git rather than derived the way the module derives
+# it: a test that repeats the code's own arithmetic passes when both are wrong together.
+CHECKOUT = Path(subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                               cwd=Path(__file__).parent, capture_output=True,
+                               text=True, check=True).stdout.strip())
 
 
 def test_the_store_finds_its_file_under_wb_home(tmp_path, monkeypatch):
@@ -126,6 +132,25 @@ def test_the_store_finds_its_file_under_wb_home(tmp_path, monkeypatch):
     # rather than by both being handed the same path.
     monkeypatch.setenv("WB_HOME", str(tmp_path))
     assert IdempotencyStore().path == tmp_path / "state" / "processed_effects.jsonl"
+
+
+def test_a_trailing_slash_on_wb_home_still_names_one_file(tmp_path, monkeypatch):
+    # The nodes build the path by joining strings, so a WB_HOME ending in a slash gives
+    # them "/x//state/...". That is one file to the filesystem, and the store must not
+    # answer with a different one.
+    monkeypatch.setenv("WB_HOME", str(tmp_path) + "/")
+    assert IdempotencyStore().path == tmp_path / "state" / "processed_effects.jsonl"
+
+
+def test_a_relative_wb_home_is_refused_rather_than_kept(monkeypatch):
+    # A relative WB_HOME resolves against whatever directory each process was started in,
+    # and n8n's is not the app's — so both sides would go on working while quietly
+    # keeping two stores, the one failure this rule exists to remove. The nodes refuse a
+    # WB_HOME they cannot use; this side refuses one it cannot share.
+    monkeypatch.setenv("WB_HOME", "relative/checkout")
+    with pytest.raises(WorkbenchError) as exc:
+        IdempotencyStore()
+    assert "WB_HOME" in str(exc.value) and "absolute" in str(exc.value).lower()
 
 
 def test_without_wb_home_the_store_file_is_the_checkout_s(monkeypatch):

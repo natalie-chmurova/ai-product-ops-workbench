@@ -24,6 +24,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from .client import WorkbenchError
+
 
 # Whitespace as JavaScript's \s defines it, which is also what String.prototype.trim()
 # strips: the n8n Idempotency check normalises with it, and Parse decision trims the
@@ -155,16 +157,30 @@ _CHECKOUT = Path(__file__).resolve().parent.parent
 def store_path() -> Path:
     """The file the app and the n8n workflow both append to, and both read.
 
-    WB_HOME when it is set, this checkout otherwise -- the rule the Idempotency check
-    and Mark processed nodes resolve their STORE by, so the two sides name one file
-    without either being told which. Read at the moment a store is opened, not at
-    import, so a run that sets WB_HOME is obeyed.
+    WB_HOME when it is set, this checkout otherwise. Under a WB_HOME the two sides name
+    one file without either being told which: the nodes join `base + '/state/...'` where
+    this joins path segments, and the results name one file. Where the rules differ is
+    without a WB_HOME -- the nodes refuse to run, because n8n is started outside any
+    checkout and has nothing to fall back to, while this side has the checkout it is
+    running from. Read when a store is opened, not at import, so a run that sets
+    WB_HOME is obeyed.
 
-    The app used to derive it from the location of the module doing the applying, and
-    two checkouts -- or a packaged install -- then quietly kept two stores: every effect
-    one of them had applied came back as new in the other.
+    A relative WB_HOME is refused. String-joined or segment-joined, it resolves against
+    the working directory of whichever process reads it, and n8n's is not the app's --
+    so both sides would go on working and quietly keep two stores. That is exactly the
+    failure this rule exists to remove: the app used to derive the path from the
+    location of the module doing the applying, and two checkouts -- or a packaged
+    install -- then kept two stores, in which every effect one had applied came back as
+    new in the other.
     """
-    return Path(os.environ.get("WB_HOME") or _CHECKOUT) / "state" / "processed_effects.jsonl"
+    home = os.environ.get("WB_HOME")
+    if home and not Path(home).is_absolute():
+        raise WorkbenchError(
+            f"WB_HOME must be an absolute path to the checkout, not {home!r}: n8n and "
+            "the app resolve a relative one against their own working directories and "
+            "would keep two separate stores of applied effects."
+        )
+    return Path(home or _CHECKOUT) / "state" / "processed_effects.jsonl"
 
 
 class IdempotencyStore:
@@ -214,10 +230,11 @@ class IdempotencyStore:
         self._reserved.add(key)
         try:
             ok, info = effect()
-        except BaseException:
+        finally:
+            # Reserved only while it runs: a key still held by an effect that failed --
+            # or raised -- would report an identical effect after it as a repeat, and
+            # nothing would ever retry it.
             self._reserved.discard(key)
-            raise
-        self._reserved.discard(key)
         if not ok:
             return Attempt(FAILED, info)
         self._applied.add(key)
@@ -243,7 +260,8 @@ class IdempotencyStore:
         """One line per applied effect, in the format the n8n Mark processed node writes.
 
         Both sides append to this file and both sides read it, so the record is composed
-        here rather than at each call site: `source` is all a caller says about itself.
+        here rather than at each call site: a caller says what the effect was and who it
+        was, and the key, the timestamp and the cut of the preview are the store's.
         """
         record = {"key": key, "kind": kind, "target": target or None,
                   "preview": (preview or "")[:60], "ts": _now(), "source": source}
