@@ -174,26 +174,24 @@ def test_a_failed_effect_keeps_no_key_so_it_can_be_retried(monkeypatch, tmp_path
 
 
 def test_a_network_error_on_a_comment_is_a_failed_effect_not_a_traceback(monkeypatch,
-                                                                         tmp_path):
+                                                                         tmp_path,
+                                                                         transport):
     # add_comment itself runs here, over a network that drops the second comment. The
     # click has to come back with a summary: that failure listed and left without a key,
     # so it can be retried, and every effect that went through keeping its key.
     import json
-    from types import SimpleNamespace
+
+    import requests
 
     from src import clickup
 
-    monkeypatch.setenv("CLICKUP_API_TOKEN", "pk_test")
     monkeypatch.setattr(apply, "push_context", lambda: ([], {}, None))
     monkeypatch.setattr(apply, "push_one", lambda task, list_id, members, aliases, backlog_id: {
         "ok": True, "info": task["name"], "assigned": False, "backlog": False})
-
-    def post(url, **kwargs):
-        if url.endswith("/task/86b/comment"):
-            raise clickup.requests.ConnectionError("Connection reset by peer")
-        return SimpleNamespace(status_code=200, text="")
-
-    monkeypatch.setattr(clickup.requests, "post", post)
+    for target in ("86a", "86c"):
+        transport.answers(f"{clickup.API}/task/{target}/comment", {"id": f"c{target}"})
+    transport.drops(f"{clickup.API}/task/86b/comment",
+                    requests.ConnectionError("Connection reset by peer"))
     comments = [{"name": f"C{i}", "detail": f"body {i}", "target_id": target,
                  "decision": "UPDATE", "confidence": 0.9, "reason": "r"}
                 for i, target in enumerate(["86a", "86b", "86c"], 1)]
@@ -202,7 +200,9 @@ def test_a_network_error_on_a_comment_is_a_failed_effect_not_a_traceback(monkeyp
                                store=IdempotencyStore(path), when="2026-09-09")
 
     assert summary["created"] == 1 and summary["commented"] == 2
-    assert len(summary["failed"]) == 1 and "network error" in summary["failed"][0]
+    assert len(summary["failed"]) == 1
+    assert "Could not reach ClickUp" in summary["failed"][0]
+    assert "Connection reset by peer" in summary["failed"][0]
     kept = {json.loads(line)["key"] for line in path.read_text(encoding="utf-8").splitlines()}
     assert kept == {create_key(CREATE), comment_key(comments[0]), comment_key(comments[2])}
 
