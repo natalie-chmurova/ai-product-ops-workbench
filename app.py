@@ -30,6 +30,7 @@ from src.assignees import roster_line, team_roster
 from src.clickup import get_lists, get_tasks
 from src.client import WorkbenchError
 from src.extract import extract_context
+from src.idempotency import ALREADY_APPLIED, REPEATED
 from src.plan import Plan, ask_label, build_plan, plan_markdown
 from src.reconcile import reconcile, reconcile_decisions
 
@@ -230,10 +231,10 @@ def render_apply(result: dict) -> None:
                 # counted nowhere — an effect the tracker refused.
                 line = (f"Created {summary['created']} · "
                         f"commented {summary['commented']} · "
-                        f"{summary['already_applied']} already applied · "
+                        f"{summary[ALREADY_APPLIED]} already applied · "
                         f"{summary['assigned']} assigned to an owner.")
-                if summary["repeated"]:
-                    line += (f" {summary['repeated']} point(s) asked for an effect this "
+                if summary[REPEATED]:
+                    line += (f" {summary[REPEATED]} point(s) asked for an effect this "
                              f"plan had already applied.")
                 st.success(line)
                 st.markdown(f"➡️ [Open the ClickUp board]({summary['list_url']})")

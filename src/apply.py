@@ -17,6 +17,7 @@ from .idempotency import (
     ALREADY_APPLIED,
     APPLIED,
     FAILED,
+    REPEATED,
     Attempt,
     IdempotencyStore,
     comment_body,
@@ -39,14 +40,22 @@ def comment_text(point: dict, meeting_title: str, when: str) -> str:
     return f'From the meeting "{meeting_title}" ({when}):\n{comment_body(point)}'
 
 
-def _count_unapplied(summary: dict, attempt: Attempt) -> None:
-    """An effect that never ran, counted as the reason it did not.
+def _tally(summary: dict, attempt: Attempt, applied: str) -> None:
+    """Count one attempt as the thing that actually happened to it.
 
-    A repeat is not an "already applied": nothing had seen it before this click, and
-    telling a person it had sends them looking on the board for work that was
-    never written.
+    The outcomes are the store's words, used here as the summary's own keys: spelling
+    them again would let the two drift, and a person reading "already applied" about an
+    effect nothing had ever written goes looking on the board for work that is not
+    there. `applied` is what a success is called in this loop — a create or a comment.
     """
-    summary["already_applied" if attempt.outcome == ALREADY_APPLIED else "repeated"] += 1
+    if attempt.outcome == APPLIED:
+        summary[applied] += 1
+    elif attempt.outcome == FAILED:
+        summary["failed"].append(attempt.info)
+    else:
+        # Named, not deduced: an outcome added later must be counted, not folded into
+        # whichever of these two is written last.
+        summary[attempt.outcome] += 1
 
 
 def apply_plan(
@@ -89,7 +98,7 @@ def apply_plan(
     members, aliases, _backlog_id = push_context()
 
     summary = {
-        "created": 0, "commented": 0, "already_applied": 0, "repeated": 0,
+        "created": 0, "commented": 0, ALREADY_APPLIED: 0, REPEATED: 0,
         "assigned": 0, "backlog": 0, "failed": [], "total": len(create) + len(comment),
         "list_url": list_url(plan.scope),
     }
@@ -99,34 +108,31 @@ def apply_plan(
         # own; here there is only the writing and the counting.
         attempt = store.apply_once(
             create_key(effect.point),
-            lambda e=effect: _push(e, plan.scope, members, aliases),
+            lambda: _push(effect, plan.scope, members, aliases),
             kind="NEW", target=None, preview=effect.name, source=SOURCE)
+        _tally(summary, attempt, "created")
         if attempt.outcome == APPLIED:
-            summary["created"] += 1
+            # What a create reports beyond succeeding: who it landed on, and whether it
+            # went to the backlog.
             summary["assigned"] += attempt.info["assigned"]
             summary["backlog"] += attempt.info["backlog"]
-        elif attempt.outcome == FAILED:
-            summary["failed"].append(attempt.info["info"])
-        else:
-            _count_unapplied(summary, attempt)
 
     for effect in comment:
         text = comment_text(effect.point, meeting_title, when)
         attempt = store.apply_once(
             comment_key(effect.point),
-            lambda e=effect, t=text: add_comment(e.target_id, t),
+            lambda: add_comment(effect.target_id, text),
             kind="UPDATE", target=effect.target_id, preview=effect.name, source=SOURCE)
-        if attempt.outcome == APPLIED:
-            summary["commented"] += 1
-        elif attempt.outcome == FAILED:
-            summary["failed"].append(attempt.info)
-        else:
-            _count_unapplied(summary, attempt)
+        _tally(summary, attempt, "commented")
 
     return summary
 
 
 def _push(effect, scope: str, members: list, aliases: dict) -> tuple:
-    """Create one task, and report it the way every effect reports itself: (ok, info)."""
+    """Create one task, and report it the way every effect reports itself: (ok, info).
+
+    On failure the info is the reason, as every other write in this pipeline answers —
+    so a caller counting failures never has to know which kind of effect it was reading.
+    """
     res = push_one(effect.point, scope, members, aliases, None)
-    return res["ok"], res
+    return res["ok"], res if res["ok"] else res["info"]

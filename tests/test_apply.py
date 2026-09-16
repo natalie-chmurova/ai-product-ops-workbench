@@ -10,7 +10,8 @@ import pytest
 
 from src import apply
 from src.client import WorkbenchError
-from src.idempotency import IdempotencyStore, comment_key, create_key
+from src.idempotency import (ALREADY_APPLIED, REPEATED, IdempotencyStore, comment_key,
+                            create_key)
 from src.plan import build_plan
 
 BOARD = [{"id": "86abc", "name": "[Payments] Fix saved cards"},
@@ -53,7 +54,7 @@ def test_a_plan_is_applied_and_counted(monkeypatch, tmp_path):
     assert [c[0]["name"] for c in created] == ["[Dev] New alerting"]
     assert commented[0][0] == "86abc"
     assert summary["created"] == 1 and summary["commented"] == 1
-    assert summary["already_applied"] == 0 and summary["repeated"] == 0
+    assert summary[ALREADY_APPLIED] == 0 and summary[REPEATED] == 0
     assert summary["total"] == 2
 
 
@@ -101,7 +102,7 @@ def test_the_second_click_applies_nothing(monkeypatch, tmp_path):
     again = apply.apply_plan(_plan(), store=IdempotencyStore(tmp_path / "s.jsonl"),
                              when="2026-09-09")
     assert len(created) == 1 and len(commented) == 1     # no second call was made
-    assert again["already_applied"] == 2
+    assert again[ALREADY_APPLIED] == 2
     assert again["created"] == 0 and again["commented"] == 0
 
 
@@ -123,7 +124,7 @@ def test_a_failure_is_not_a_skip_and_a_repeat_is_not_an_already_applied(monkeypa
                                store=IdempotencyStore(path), when="2026-09-09")
     assert summary["created"] == 0 and summary["commented"] == 1
     assert summary["failed"] == ["no permission on that list"]
-    assert summary["repeated"] == 1 and summary["already_applied"] == 0
+    assert summary[REPEATED] == 1 and summary[ALREADY_APPLIED] == 0
     assert len(commented) == 1  # the repeat reached neither the tracker
     assert len(path.read_text(encoding="utf-8").splitlines()) == 1   # nor the store
 
@@ -220,7 +221,7 @@ def test_the_same_plan_on_another_day_is_still_a_no_op(monkeypatch, tmp_path):
                      meeting_title="Weekly sync", when="2026-09-09")
     later = apply.apply_plan(_plan([COMMENT]), store=IdempotencyStore(tmp_path / "s.jsonl"),
                              meeting_title="Weekly sync", when="2026-09-10")
-    assert later["already_applied"] == 1 and later["commented"] == 0
+    assert later[ALREADY_APPLIED] == 1 and later["commented"] == 0
 
 
 # --- the asks a person ticked -------------------------------------------------
