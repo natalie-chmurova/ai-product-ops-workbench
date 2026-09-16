@@ -7,6 +7,7 @@ because the router wrote into the dicts it was given. It reads the plan now.
 
 The published effect numbers were measured with the old code, so they only stay
 comparable if the new path returns exactly what the old one returned. `_frozen_*` below
+is that old code, copied here verbatim and run beside the new function on the same saved
 matches at the same gate. It is a pin, not a spec: nothing else may call it, and it is
 deleted when the numbers are next re-measured. Its own identifiers are left as they
 stood — a verbatim copy that has been re-spelled is no longer a copy.
