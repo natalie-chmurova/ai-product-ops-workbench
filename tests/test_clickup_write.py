@@ -146,3 +146,33 @@ def test_a_write_with_no_token_is_a_reason_not_a_raise(monkeypatch, transport):
     assert ok is False
     assert "CLICKUP_API_TOKEN" in info
     assert transport.calls == []
+
+
+# --- a write's answer is never read ------------------------------------------
+
+def test_a_create_that_went_through_is_not_offered_again_over_its_answer(transport):
+    # The body of a write's answer is never read, so an answer that is not JSON — an
+    # HTML page from a proxy in front of the API, say — says nothing about whether the
+    # task was created. Reading it as a refusal offers the same task a second time,
+    # which is how one effect becomes two tasks on the board.
+    transport.answers(MAIN, None, text="OK")
+    ok, info = clickup._create_task("main", {"name": "[Dev] New alerting",
+                                             "tags": ["ops"]})
+    assert (ok, info) == (True, "[Dev] New alerting")
+    assert len(transport.calls) == 1
+
+
+def test_a_create_answered_with_a_list_is_not_offered_again(transport):
+    # Same for an answer of the wrong shape: the create succeeded, whatever came back.
+    transport.answers(MAIN, [{"id": "86new"}])
+    ok, info = clickup._create_task("main", {"name": "[Dev] New alerting",
+                                             "tags": ["ops"]})
+    assert (ok, info) == (True, "[Dev] New alerting")
+    assert len(transport.calls) == 1
+
+
+def test_a_comment_that_went_through_is_not_reported_as_failed(transport):
+    # A comment reported failed is a comment with no key in the store, so the next run
+    # posts it again — on a task that already carries it.
+    transport.answers(COMMENT, None, text="<html>OK</html>")
+    assert clickup.add_comment("86abc", "the release ships Wednesday") == (True, "86abc")

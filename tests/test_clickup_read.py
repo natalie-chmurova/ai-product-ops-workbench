@@ -108,6 +108,24 @@ def test_a_board_answer_of_the_wrong_shape_is_a_sentence_not_a_traceback(transpo
     assert "tasks" in str(exc.value)
 
 
+def test_a_board_answer_with_no_tasks_at_all_is_a_failed_read(transport):
+    # ClickUp answers 200 with an error body of its own on occasion. Read as an empty
+    # board, that turns every point in the meeting into new work — the silent failure
+    # the whole reconcile stage exists to prevent — so an answer that carries no board
+    # at all is a failed read, not an empty one.
+    transport.answers(BOARD, {"err": "Team not authorized", "ECODE": "OAUTH_027"})
+    with pytest.raises(WorkbenchError) as exc:
+        clickup.get_tasks("123")
+    assert "tasks" in str(exc.value)
+
+
+def test_an_empty_board_is_still_an_empty_board(transport):
+    # The leniency that goes is only about a missing board. A list with nothing open
+    # answers with an empty one, and that is a board that was read.
+    transport.answers(BOARD, {"tasks": [], "last_page": True})
+    assert clickup.get_tasks("123") == []
+
+
 def test_a_repeating_page_response_does_not_loop_forever(transport):
     # A malformed "repeating page" response keeps last_page False with non-empty tasks on
     # every call. The ceiling must be enforced inside the loop, or this hangs forever
@@ -195,6 +213,26 @@ def test_a_space_with_no_id_or_name_is_a_sentence_not_a_traceback(monkeypatch, t
 
 # --- the workspace's members -------------------------------------------------
 
+def test_a_list_named_with_nothing_does_not_cost_the_whole_picker(monkeypatch, transport):
+    # An entry with no id or no name at all is an answer nobody here can read. An entry
+    # named with an empty string is a list someone left unnamed: it shows as it is,
+    # rather than costing every other list in the workspace its place in the picker.
+    monkeypatch.setenv("CLICKUP_TEAM_ID", "team1")
+    transport.answers(f"{API}/team/team1/space", {"spaces": [{"id": "s1", "name": "Space"}]})
+    transport.answers(f"{API}/space/s1/list", {"lists": [{"id": "l1", "name": ""},
+                                                         {"id": "l2", "name": "Sprint"}]})
+    transport.answers(f"{API}/space/s1/folder", {"folders": []})
+    assert [l["id"] for l in clickup.get_lists()] == ["l1", "l2"]
+
+
+def test_a_member_read_that_is_not_json_is_a_workbench_error(monkeypatch, transport):
+    monkeypatch.setenv("CLICKUP_TEAM_ID", "team1")
+    transport.answers(f"{API}/team", None, text="<html>gateway</html>")
+    with pytest.raises(WorkbenchError) as exc:
+        clickup.get_members()
+    assert "other than JSON" in str(exc.value)
+
+
 def test_no_workspace_means_no_members_and_no_request(monkeypatch, transport):
     monkeypatch.delenv("CLICKUP_TEAM_ID", raising=False)
     assert clickup.get_members() == []
@@ -249,4 +287,53 @@ def test_a_read_with_no_token_says_so_before_asking(monkeypatch, transport):
     with pytest.raises(WorkbenchError) as exc:
         clickup.get_tasks("123")
     assert "CLICKUP_API_TOKEN" in str(exc.value)
+    assert transport.calls == []
+
+
+ROSTER_ALIASES = "Dana:222150225, Priya:222150225"
+
+
+
+# --- the live roster: read from the tracker, and never a raise -----------------
+
+TEAMS = f"{API}/team"
+
+
+def _configured(monkeypatch) -> None:
+    monkeypatch.setenv("CLICKUP_TEAM_ID", "9018")
+    monkeypatch.setenv("OWNER_ALIASES", ROSTER_ALIASES)
+
+
+def test_the_live_roster_is_the_tracker_s_members_and_the_aliases(monkeypatch, transport):
+    _configured(monkeypatch)
+    transport.answers(TEAMS, {"teams": [{"id": "9018", "members": [
+        {"user": {"id": 999, "username": "Marco Rossi"}}]}]})
+    assert clickup.team_roster() == [{"name": "Marco Rossi", "id": "999"},
+                             {"name": "Dana", "id": "222150225"},
+                             {"name": "Priya", "id": "222150225"}]
+
+
+def test_a_roster_the_tracker_cannot_be_reached_for_is_the_aliases(monkeypatch, transport):
+    # The roster is read before every run, and it is not what a run is for: raising here
+    # would stop a transcript that needs no tracker at all. The aliases still name people,
+    # and with none of them the prompts read names out of the transcript.
+    _configured(monkeypatch)
+    transport.drops(TEAMS)
+    assert [r["name"] for r in clickup.team_roster()] == ["Dana", "Priya"]
+
+
+def test_a_roster_the_tracker_answered_strangely_is_the_aliases(monkeypatch, transport):
+    # Every way a member read can fail degrades the same way — a refused token, a dropped
+    # connection, and a 200 that is not the shape a reader can read.
+    _configured(monkeypatch)
+    transport.answers(TEAMS, status=401, text="Token invalid")
+    assert [r["name"] for r in clickup.team_roster()] == ["Dana", "Priya"]
+    transport.answers(TEAMS, {"teams": "none"})
+    assert [r["name"] for r in clickup.team_roster()] == ["Dana", "Priya"]
+
+
+def test_an_unconfigured_roster_asks_the_tracker_nothing(monkeypatch, transport):
+    monkeypatch.delenv("CLICKUP_TEAM_ID", raising=False)
+    monkeypatch.setenv("OWNER_ALIASES", ROSTER_ALIASES)
+    assert [r["name"] for r in clickup.team_roster()] == ["Dana", "Priya"]
     assert transport.calls == []

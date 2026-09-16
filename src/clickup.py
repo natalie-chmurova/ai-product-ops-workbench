@@ -21,6 +21,7 @@ from pathlib import Path
 
 import requests
 
+from .assignees import alias_map, build_roster, resolve_owner
 from .client import WorkbenchError
 
 API = "https://api.clickup.com/api/v2"
@@ -75,7 +76,7 @@ def _kind(value) -> str:
 
 def _request(method: str, url: str, *, what: str, hint: str = "",
              params: dict | None = None, body: dict | None = None,
-             timeout: int = 20) -> dict:
+             timeout: int = 20, reads_body: bool = True) -> dict:
     """Make one ClickUp request and return the JSON object it answered with.
 
     The one place the token, the headers and the timeout are written, and the one place
@@ -83,6 +84,11 @@ def _request(method: str, url: str, *, what: str, hint: str = "",
     say it ("read the board", "comment on task 86abc"), so one sentence covers every
     caller; `hint` is what to check, and a write leaves it out because its reason is read
     in a list of failed effects, not on its own.
+
+    `reads_body` is false for a write, whose answer nobody reads. What came back then
+    says nothing about whether the write went through -- a proxy in front of the API can
+    answer 200 with an HTML page -- and calling that a refusal would offer the same task
+    again, which is how one effect becomes two rows on the board.
     """
     headers = {"Authorization": _token(), "Content-Type": "application/json"}
     try:
@@ -94,6 +100,8 @@ def _request(method: str, url: str, *, what: str, hint: str = "",
     if not 200 <= response.status_code < 300:
         raise WorkbenchError(_said(
             f"Could not {what} (HTTP {response.status_code}): {_cut(response.text)}", hint))
+    if not reads_body:
+        return {}
     try:
         data = response.json()
     except ValueError as exc:  # requests' JSONDecodeError is a ValueError
@@ -108,18 +116,25 @@ def _request(method: str, url: str, *, what: str, hint: str = "",
 
 
 def _objects(data: dict, key: str, what: str, hint: str = "",
-             needs: tuple = ()) -> list[dict]:
+             needs: tuple = (), required: bool = False) -> list[dict]:
     """The list of objects an answer should hold under `key`, or a sentence saying what
     arrived instead.
 
     A 200 of an unexpected shape is still a failed read: it used to stop the page with
     whatever error the reader hit first — an AttributeError on a list, a KeyError on a
     space with no id — which tells a person nothing about what to do next.
+
+    `required` is for the board. ClickUp leaves a collection out, or sends it null, when
+    it is empty, and for members or folders reading that as "none" is right. The board is
+    the one read where "none" and "the answer does not carry a board" must not be the
+    same thing: ClickUp answers 200 with an error body of its own on occasion, and a
+    board that reads as empty turns every point in the meeting into new work.
     """
     got = data.get(key)
+    if got is None and required:
+        raise WorkbenchError(_said(
+            f'Could not {what}: ClickUp\'s answer carries no "{key}".', hint))
     if got is None:
-        # ClickUp leaves a collection out, or sends it null, when it is empty; anything
-        # else under that key is an answer of a shape nobody here can read.
         got = []
     if not isinstance(got, list):
         raise WorkbenchError(_said(
@@ -129,7 +144,9 @@ def _objects(data: dict, key: str, what: str, hint: str = "",
             raise WorkbenchError(_said(
                 f'Could not {what}: ClickUp sent {_kind(item)} inside "{key}" where an '
                 "object was expected.", hint))
-        missing = [f'"{field}"' for field in needs if not item.get(field)]
+        # Absent, not merely empty: a list someone left unnamed is a list, and refusing
+        # the answer it came in would cost every other entry its place in the picker.
+        missing = [f'"{field}"' for field in needs if item.get(field) is None]
         if missing:
             raise WorkbenchError(_said(
                 f'Could not {what}: an entry in "{key}" has no '
@@ -220,6 +237,19 @@ def known_members() -> list[dict]:
         return []
 
 
+def team_roster() -> list[dict]:
+    """The live roster: this workspace's members plus the configured aliases.
+
+    Never raises, because the roster is read before every run and is not what a run is
+    for: a member read that failed becomes no members in `known_members`, so with no
+    credentials — or a tracker that cannot be reached — you still get the aliases, and
+    with nothing configured at all the prompts fall back to reading names out of the
+    transcript. It lives here, with the read it degrades, rather than in the module about
+    names, which talks to no tracker.
+    """
+    return build_roster(known_members(), os.environ.get("OWNER_ALIASES", ""))
+
+
 def get_tasks(list_id: str | None = None, include_closed: bool = False) -> list[dict]:
     """Read the board: open tasks in a list, as [{id, name, status, assignees, due_date}].
 
@@ -242,7 +272,7 @@ def get_tasks(list_id: str | None = None, include_closed: bool = False) -> list[
             params={"include_closed": "true" if include_closed else "false", "page": page},
             what="read the board", hint=_LIST_HINT,
         )
-        tasks = _objects(data, "tasks", "read the board", _LIST_HINT)
+        tasks = _objects(data, "tasks", "read the board", _LIST_HINT, required=True)
         out.extend(_task_row(t) for t in tasks)
         # Checked here, inside the loop, right after each page is added — not after
         # the loop breaks. A page sequence that never reports last_page (or keeps
@@ -323,18 +353,27 @@ def load_board_fixture(path) -> list[dict]:
     return board
 
 
+def _write(url: str, *, what: str, body: dict, timeout: int = 20) -> tuple[bool, str]:
+    """One write, answered the way every effect in this pipeline answers: (ok, reason).
+
+    A refused or dropped write is a failed effect like a rejected one: reported, keyless,
+    free to be retried — not a traceback that loses the rest of the run's summary. The
+    answer's body is not read, so what came back cannot turn a write that went through
+    into a failure.
+    """
+    try:
+        _request("POST", url, what=what, body=body, timeout=timeout, reads_body=False)
+    except WorkbenchError as exc:
+        return False, str(exc)
+    return True, ""
+
+
 def add_comment(task_id: str, text: str) -> tuple[bool, str]:
     """Comment on an existing task — the effect that replaces creating a duplicate."""
-    try:
-        _request("POST", f"{API}/task/{task_id}/comment",
-                 what=f"comment on task {task_id}",
-                 body={"comment_text": text, "notify_all": False})
-    except WorkbenchError as exc:
-        # A refused or dropped comment is a failed effect like a rejected one: reported,
-        # keyless, free to be retried — not a traceback that loses the rest of the run's
-        # summary.
-        return False, str(exc)
-    return True, task_id
+    ok, reason = _write(f"{API}/task/{task_id}/comment",
+                        what=f"comment on task {task_id}",
+                        body={"comment_text": text, "notify_all": False})
+    return (True, task_id) if ok else (False, reason)
 
 
 def _create_task(list_id: str, task: dict, assignee_id: str | None = None) -> tuple[bool, str]:
@@ -356,7 +395,7 @@ def _create_task(list_id: str, task: dict, assignee_id: str | None = None) -> tu
     url = f"{API}/list/{list_id}/task"
     what = f'create the task "{payload["name"]}"'
     try:
-        _request("POST", url, what=what, body=payload, timeout=30)
+        _request("POST", url, what=what, body=payload, timeout=30, reads_body=False)
         return True, payload["name"]
     except _Unreachable as exc:
         # Nothing answered, so the task may exist already: offering it again is how one
@@ -371,17 +410,12 @@ def _create_task(list_id: str, task: dict, assignee_id: str | None = None) -> tu
     # A second payload, not the first one emptied: the first has been sent, and a request
     # that is still in flight must not have its body changed underneath it.
     tagless = {field: value for field, value in payload.items() if field != "tags"}
-    try:
-        _request("POST", url, what=what, body=tagless, timeout=30)
-    except WorkbenchError as exc:
-        return False, str(exc)
-    return True, tagless["name"]
+    ok, reason = _write(url, what=what, body=tagless, timeout=30)
+    return (True, tagless["name"]) if ok else (False, reason)
 
 
 def push_context() -> tuple[list[dict], dict[str, str], str | None]:
     """Members, alias map and backlog list — read once per batch of writes."""
-    from .assignees import alias_map
-
     # A newly found defect belongs in the backlog, not in the running sprint. With no
     # backlog list configured everything still lands in the main list, tagged with
     # the intended destination, so nothing is silently lost.
@@ -400,8 +434,6 @@ def push_one(
     Returns {ok, info, assigned, backlog}. One task at a time so a caller can record
     exactly which effect succeeded — the idempotency key is committed per effect.
     """
-    from .assignees import resolve_owner
-
     assignee_id = resolve_owner(task.get("owner"), members, aliases)
     wants_backlog = str(task.get("destination", "")).lower() == "backlog"
     target = backlog_id if (wants_backlog and backlog_id) else list_id
