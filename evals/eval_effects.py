@@ -119,10 +119,10 @@ def effects_from(entries: list[dict], decisions: list[dict], threshold: float = 
 
     The plan is what production routes with, so it is what this measures. Building one
     leaves the saved decisions untouched, which is why the same file can be scored at ten
-    gates in a row. The board is not passed: a plan built for scoring names no rows and
-    is written nowhere — only the routing is being measured here.
+    gates in a row. No board is read and no scope is named: a plan built for scoring
+    names no rows and is written nowhere — only the routing is being measured here.
     """
-    plan = build_plan(decisions, [], [], "", threshold)
+    plan = build_plan(decisions, [], [], "", threshold, board_read=False)
     return [
         {
             "id": entry["id"],

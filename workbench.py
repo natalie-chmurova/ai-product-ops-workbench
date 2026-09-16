@@ -126,13 +126,14 @@ def run(transcript_path: Path, board_path: Path | None = None) -> None:
         # extracted bugs through the board check, which the action items never did.
         # An empty board costs no model call: every point is new without asking.
         # One plan, built once: the file below and the counts printed after it are the
-        # same value read twice, so they cannot disagree about the same run. A fixture
-        # board is not a tracker list, so a fixture run has no scope to write to.
+        # same value read twice, so they cannot disagree about the same run. The CLI
+        # writes to no tracker, so its plan names no scope -- and a board it did read,
+        # empty or not, is still a board it read.
         plan = build_plan(
             reconcile(tasks, board),
             reconcile_decisions(context.get("decisions", []), board),
             board,
-            "" if board_path else os.environ.get("CLICKUP_LIST_ID", ""),
+            "",
         )
         _write(OUTPUT_DIR / "board_plan.md", plan_markdown(plan))
         counts = plan.counts

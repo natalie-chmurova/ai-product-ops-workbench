@@ -206,9 +206,9 @@ def render_apply(result: dict) -> None:
             # A doubtful comment names the task it would land on, and a guardrail cause
             # says what fired: that match is what the person is being asked to check.
             label = ask_label(effect)
-            if effect.intent and st.checkbox(label, key=f"ask_{i}"):
+            if effect.is_actionable and st.checkbox(label, key=f"ask_{i}"):
                 approved.append(effect)
-            elif not effect.intent:
+            elif not effect.is_actionable:
                 st.caption(f"⚠️ {label} — needs manual handling")
 
         if st.button("📤 Apply plan to ClickUp", use_container_width=True, key="apply_plan",
@@ -366,6 +366,9 @@ with right:
                     reconcile(tasks, board),
                     reconcile_decisions(context.get("decisions", []), board),
                     board, scope_id,
+                    # With no list selected no board was read, which is not the same
+                    # fact as a board that was read and found empty.
+                    board_read=bool(scope_id),
                 )
                 elapsed = time.monotonic() - started
                 st.write(f"Stage 3/3 — done in {elapsed:.0f}s")

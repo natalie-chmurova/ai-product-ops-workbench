@@ -255,13 +255,22 @@ def test_a_board_with_no_open_tasks_says_so():
     assert "no open tasks" in md.lower()
 
 
-def test_no_scope_says_the_board_was_not_read():
-    # With no list selected nothing was read, so "the board has no open tasks" would be
-    # a claim about a board this run never saw.
-    md = plan_markdown(build_plan([task()], [], [], "")).lower()
+def test_a_board_that_was_not_read_says_so():
+    # With nothing read, "the board has no open tasks" would be a claim about a board
+    # this run never saw.
+    md = plan_markdown(build_plan([task()], [], [], "", board_read=False)).lower()
     assert "no list was selected" in md
     assert "not read" in md
     assert "no open tasks" not in md
+
+
+def test_a_board_read_and_found_empty_is_not_a_board_that_was_not_read():
+    # Whether a board was read and where the plan may be written are two facts. A CLI
+    # run against a fixture has no scope to write to and still read a board: saying it
+    # was not read would contradict the line the run printed above the plan.
+    md = plan_markdown(build_plan([task()], [], [], "", board_read=True)).lower()
+    assert "no open tasks" in md
+    assert "not read" not in md
 
 
 def test_a_board_that_was_read_says_how_big_it_was():
@@ -320,3 +329,44 @@ def test_a_label_does_not_repeat_plain_doubt_as_a_cause():
     effect = one(build_plan([task(confidence=0.5)], [], BOARD, "list1"))
     label = ask_label(effect)
     assert "low_confidence" not in label and "0.50" in label
+
+
+# --- a person's approval --------------------------------------------------------
+
+def test_an_approved_ask_becomes_what_the_agent_intended():
+    # Approving an ask means "do what you were going to do", and the plan says what that
+    # was. Working it out again outside the plan is how two callers come to disagree.
+    plan = build_plan([task(confidence=0.5), task(name="Saved cards", decision="UPDATE",
+                                                  target_id="86abc", confidence=0.5)],
+                      [], BOARD, "list1")
+    assert plan.counts == {"create": 0, "comment": 0, "ask": 2}
+    approved = plan.with_approved(plan.ask)
+    assert approved.counts == {"create": 1, "comment": 1, "ask": 0}
+    assert approved.create[0].name == "New alerting"
+    assert approved.comment[0].target_id == "86abc"
+
+
+def test_an_ask_nobody_ticked_stays_an_ask():
+    plan = build_plan([task(confidence=0.5), task(name="Saved cards", confidence=0.5)],
+                      [], BOARD, "list1")
+    approved = plan.with_approved([plan.ask[0]])
+    assert approved.counts == {"create": 1, "comment": 0, "ask": 1}
+    assert approved.ask[0].name == "Saved cards"
+
+
+def test_approving_an_ask_with_nothing_safe_to_do_does_not_act_on_it():
+    # An UPDATE naming no row on the board has no effect to approve; a tick on it is a
+    # person saying "yes" to a question the agent could not put.
+    plan = build_plan([task(decision="UPDATE", target_id="", confidence=0.4)], [], BOARD,
+                      "list1")
+    assert one(plan).intent == ""
+    approved = plan.with_approved(plan.ask)
+    assert approved.counts == {"create": 0, "comment": 0, "ask": 1}
+
+
+def test_approving_leaves_the_plan_it_was_given_alone():
+    plan = build_plan([task(confidence=0.5)], [], BOARD, "list1")
+    before = copy.deepcopy(plan.effects)
+    plan.with_approved(plan.ask)
+    assert plan.counts == {"create": 0, "comment": 0, "ask": 1}
+    assert plan.effects == before

@@ -79,3 +79,20 @@ def test_the_plan_counts_the_meeting_decisions_it_shows(workbench, monkeypatch, 
     plan = _plan_after_a_run(workbench, tmp_path)
     assert "Ship Wednesday" in plan
     assert "## Ask a human (1)" in plan
+
+
+def test_a_board_fixture_holding_nothing_is_still_a_board_that_was_read(
+        workbench, monkeypatch, tmp_path):
+    # The run prints "Board: fixture ... (0 tasks)"; the plan beside it must not then say
+    # the board was not read. A fixture is not a tracker list, so the plan has no scope
+    # to be written to -- a different fact from whether a board was read.
+    monkeypatch.delenv("CLICKUP_LIST_ID", raising=False)
+    fixture = tmp_path / "board.json"
+    fixture.write_text('{"tasks": []}', encoding="utf-8")
+    transcript = tmp_path / "meeting.txt"
+    transcript.write_text("Dana: the release ships Wednesday.", encoding="utf-8")
+    (tmp_path / "outputs").mkdir()
+    workbench.run(transcript, fixture)
+    plan = (tmp_path / "outputs" / "board_plan.md").read_text(encoding="utf-8").lower()
+    assert "no open tasks" in plan
+    assert "not read" not in plan

@@ -18,7 +18,7 @@ built on is the only board it may be written to.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .idempotency import name_and_body
 
@@ -58,14 +58,30 @@ class Effect:
         """The point's name, read by the one definition the effect key reads it with."""
         return name_and_body(self.point)[0]
 
+    @property
+    def is_actionable(self) -> bool:
+        """Whether there is anything safe to do with this point at all.
+
+        An UPDATE naming no row on the board is the case: the agent knows the point
+        changes existing work and cannot say which, so a person handles it by hand and
+        no tick can turn it into an effect.
+        """
+        return bool(self.intent)
+
 
 @dataclass(frozen=True)
 class Plan:
-    """One effect per point, the scope they would be written to, and the gate used."""
+    """One effect per point, the scope they would be written to, and the gate used.
+
+    `board_read` says whether a board was read for this run at all, which is not the
+    same fact as having a scope: a CLI run reconciles against a fixture it may not
+    write to, and a board read and found empty is not a board nobody looked at.
+    """
 
     scope: str
     gate: float
     board_size: int
+    board_read: bool
     effects: tuple
 
     def _bucket(self, kind: str) -> tuple:
@@ -92,6 +108,20 @@ class Plan:
     def from_source(self, source: str) -> tuple:
         return tuple(e for e in self.effects if e.source == source)
 
+    def with_approved(self, approved=()) -> "Plan":
+        """This plan as a person left it: every ask they ticked becomes what the agent
+        intended to do with it.
+
+        Approving an ask means "do what you were going to do", and the plan is where
+        what that was is written down. A caller working it out again from the intents
+        is a second router, which is how the tab and the Apply button came to disagree.
+        A tick on an ask with nothing safe to do changes nothing.
+        """
+        ticked = [e for e in approved if e.is_actionable]
+        return replace(self, effects=tuple(
+            replace(e, kind=e.intent) if e.kind == "ask" and e in ticked else e
+            for e in self.effects))
+
 
 def build_plan(
     task_matches: list,
@@ -99,12 +129,19 @@ def build_plan(
     board: list,
     scope: str,
     gate: float = GATE,
+    *,
+    board_read: bool = True,
 ) -> Plan:
-    """The plan for one run. Reads its inputs; writes to none of them."""
+    """The plan for one run. Reads its inputs; writes to none of them.
+
+    A plan is built from a board that was read, so `board_read` is true by default;
+    a caller that read none -- the effect eval replaying saved matches -- says so.
+    """
     names = {t.get("id", ""): t.get("name", "") for t in board}
     effects = [_task_effect(m, names, gate) for m in task_matches]
     effects += [_meeting_decision_effect(m, names, gate) for m in meeting_decision_matches]
-    return Plan(scope=scope, gate=gate, board_size=len(board), effects=tuple(effects))
+    return Plan(scope=scope, gate=gate, board_size=len(board), board_read=board_read,
+                effects=tuple(effects))
 
 
 def _task_effect(match: dict, names: dict, gate: float) -> Effect:
@@ -208,7 +245,7 @@ def plan_markdown(plan: Plan) -> str:
     lines = ["# Board plan", ""]
     if plan.board_size:
         lines += [f"Reconciled against {plan.board_size} open tasks on the board.", ""]
-    elif plan.scope:
+    elif plan.board_read:
         lines += ["The board has no open tasks, so every point is new by definition.", ""]
     else:
         # Nothing was read, so nothing is known about the board — which is not the same
@@ -234,12 +271,12 @@ def ask_label(effect: Effect) -> str:
     it as needing manual handling. A guardrail cause is carried too: approving a phantom
     target without being told one fired is exactly the click this gate exists to prevent.
     """
-    if effect.intent == "comment":
-        action = f"comment on {target_label(effect)}"
-    elif effect.intent == "create":
-        action = "create a new task"
-    else:
+    if not effect.is_actionable:
         action = "no safe action"
+    elif effect.intent == "comment":
+        action = f"comment on {target_label(effect)}"
+    else:
+        action = "create a new task"
     cause = (f" `{effect.escalation_cause}`"
              if effect.escalation_cause and effect.escalation_cause != "low_confidence"
              else "")
