@@ -127,12 +127,12 @@ def _format_description(desc: str) -> str:
 def render_metrics(context: dict, tasks: list) -> None:
     urgent = sum(1 for t in tasks if t.get("priority") == 1)
     bugs = len(context.get("bugs", []))
-    decisions = len(context.get("decisions", []))
+    meeting_decisions = len(context.get("decisions", []))
     cards = [
         ("n", len(tasks), "Tasks"),
         ("accent", urgent, "Urgent"),
         ("n", bugs, "Bugs"),
-        ("n", decisions, "Decisions"),
+        ("n", meeting_decisions, "Decisions"),
     ]
     html_parts = ['<div class="wb-metrics">']
     for kind, num, label in cards:

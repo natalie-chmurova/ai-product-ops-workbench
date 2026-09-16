@@ -264,9 +264,9 @@ def test_a_confident_meeting_decision_is_applied_as_a_comment(monkeypatch, tmp_p
     # The plan tab shows meeting decisions as comments; the button has to send them, or
     # the tab promises something that never happens.
     _, commented = _wire(monkeypatch)
-    decision = dict(ORPHAN, name="Ship Wednesday, cut payments", effect="comment",
-                    target_id="86def", confidence=0.9)
-    summary = apply.apply_plan(_plan([], meeting_decisions=[decision]),
+    matched = dict(ORPHAN, name="Ship Wednesday, cut payments", effect="comment",
+                   target_id="86def", confidence=0.9)
+    summary = apply.apply_plan(_plan([], meeting_decisions=[matched]),
                                store=IdempotencyStore(tmp_path / "s.jsonl"),
                                meeting_title="Weekly sync", when="2026-09-09")
     assert [c[0] for c in commented] == ["86def"]

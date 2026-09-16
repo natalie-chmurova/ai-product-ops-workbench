@@ -1,15 +1,15 @@
 """The effect eval routes its points through the plan, and its numbers stay comparable.
 
 `evals/eval_effects.py` used to flatten saved matches with its own copy of the routing:
-a deep copy of every decision, the previous pass's `low_confidence` stamp wiped off it,
+a deep copy of every match, the previous pass's `low_confidence` stamp wiped off it,
 `split_by_confidence` called, and the buckets mapped back by `id()`. All of that existed
 because the router wrote into the dicts it was given. It reads the plan now.
 
 The published effect numbers were measured with the old code, so they only stay
 comparable if the new path returns exactly what the old one returned. `_frozen_*` below
-is that old code, copied here verbatim and run beside the new function on the same saved
-decisions at the same gate. It is a pin, not a spec: nothing else may call it, and it is
-deleted when the numbers are next re-measured.
+matches at the same gate. It is a pin, not a spec: nothing else may call it, and it is
+deleted when the numbers are next re-measured. Its own identifiers are left as they
+stood — a verbatim copy that has been re-spelled is no longer a copy.
 """
 
 from __future__ import annotations
@@ -73,17 +73,17 @@ def _entry(i: int, effect: str) -> dict:
             "expected_target": "", "flagged": False}
 
 
-def _match(name: str, decision: str, target_id: str, confidence: float, cause: str = ""):
+def _match(name: str, new_or_update: str, target_id: str, confidence: float, cause: str = ""):
     """One saved match, shaped as `reconcile` writes it into effect_decisions.json."""
-    return {"what": name, "context": "", "name": name, "detail": "", "decision": decision,
+    return {"what": name, "context": "", "name": name, "detail": "", "decision": new_or_update,
             "target_id": target_id, "confidence": confidence, "reason": f"why {name}",
             "escalation_cause": cause}
 
 
-# Every shape a saved decision comes in: acted on, doubted, and both guardrails. The
+# Every shape a saved match comes in: acted on, doubted, and both guardrails. The
 # last two are what the file can hold from an older harness — a record with no cause
 # field at all, and one still carrying a gate's own stamp.
-DECISIONS = [
+MATCHES = [
     _match("confident new", "NEW", "", 0.95),
     _match("confident update", "UPDATE", "B1", 0.9),
     _match("exactly at the gate", "NEW", "", GATE),
@@ -95,7 +95,7 @@ DECISIONS = [
     {"what": "no cause field", "name": "no cause field", "detail": "", "decision": "NEW",
      "target_id": "", "confidence": 0.7, "reason": "an older record"},
 ]
-ENTRIES = [_entry(i, "create") for i in range(len(DECISIONS))]
+ENTRIES = [_entry(i, "create") for i in range(len(MATCHES))]
 
 # The gates the sweep reports on, and the one the published numbers were measured at.
 THRESHOLDS = [round(0.50 + 0.05 * i, 2) for i in range(10)] + [GATE]
@@ -103,20 +103,20 @@ THRESHOLDS = [round(0.50 + 0.05 * i, 2) for i in range(10)] + [GATE]
 
 def test_the_eval_flattens_saved_matches_exactly_as_it_did_before():
     for threshold in THRESHOLDS:
-        assert eval_effects.effects_from(ENTRIES, DECISIONS, threshold) == \
-            _frozen_effects_from(ENTRIES, DECISIONS, threshold), f"at gate {threshold}"
+        assert eval_effects.effects_from(ENTRIES, MATCHES, threshold) == \
+            _frozen_effects_from(ENTRIES, MATCHES, threshold), f"at gate {threshold}"
 
 
 def test_the_eval_defaults_to_the_one_gate():
-    assert eval_effects.effects_from(ENTRIES, DECISIONS) == \
-        _frozen_effects_from(ENTRIES, DECISIONS, GATE)
+    assert eval_effects.effects_from(ENTRIES, MATCHES) == \
+        _frozen_effects_from(ENTRIES, MATCHES, GATE)
 
 
-def test_scoring_at_a_gate_leaves_the_saved_decisions_alone():
-    # The sweep scores the same saved decisions at ten gates in a row. A pass that wrote
+def test_scoring_at_a_gate_leaves_the_saved_matches_alone():
+    # The sweep scores the same saved matches at ten gates in a row. A pass that wrote
     # its routing back into them would have the next gate read its leavings as a fact
     # about the agent's reply.
-    before = copy.deepcopy(DECISIONS)
+    before = copy.deepcopy(MATCHES)
     for threshold in THRESHOLDS:
-        eval_effects.effects_from(ENTRIES, DECISIONS, threshold)
-    assert DECISIONS == before
+        eval_effects.effects_from(ENTRIES, MATCHES, threshold)
+    assert MATCHES == before

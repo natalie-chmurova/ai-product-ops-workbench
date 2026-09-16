@@ -43,7 +43,7 @@ def one(plan) -> object:
 
 # --- routing ------------------------------------------------------------------
 
-@pytest.mark.parametrize("decision,target_id,confidence,kind,intent", [
+@pytest.mark.parametrize("new_or_update,target_id,confidence,kind,intent", [
     ("NEW", "", 0.9, "create", "create"),
     ("NEW", "", GATE, "create", "create"),          # the gate is a floor, not a fence
     ("UPDATE", "86abc", 0.9, "comment", "comment"),
@@ -51,10 +51,10 @@ def one(plan) -> object:
     ("UPDATE", "86abc", 0.5, "ask", "comment"),
     ("UPDATE", "", 0.0, "ask", ""),                 # no row to comment on: nothing safe
 ])
-def test_a_task_is_routed_by_its_match_and_the_gate(decision, target_id, confidence,
+def test_a_task_is_routed_by_its_match_and_the_gate(new_or_update, target_id, confidence,
                                                     kind, intent):
     effect = one(build_plan(
-        [task(decision=decision, target_id=target_id, confidence=confidence)],
+        [task(decision=new_or_update, target_id=target_id, confidence=confidence)],
         [], BOARD, "list1"))
     assert (effect.kind, effect.intent) == (kind, intent)
 
@@ -108,11 +108,11 @@ def test_an_effect_names_the_row_it_would_land_on():
 
 
 def test_an_effect_keeps_the_point_and_says_where_it_came_from():
-    point, decision = task(), meeting_decision()
-    plan = build_plan([point], [decision], BOARD, "list1")
+    point, decision_point = task(), meeting_decision()
+    plan = build_plan([point], [decision_point], BOARD, "list1")
     assert [e.source for e in plan.effects] == ["task", "meeting decision"]
-    assert plan.effects[0].point == point and plan.effects[1].point == decision
-    assert [e.name for e in plan.effects] == [point["name"], decision["name"]]
+    assert plan.effects[0].point == point and plan.effects[1].point == decision_point
+    assert [e.name for e in plan.effects] == [point["name"], decision_point["name"]]
 
 
 # --- the plan is a value ------------------------------------------------------
@@ -127,11 +127,11 @@ def test_building_a_plan_leaves_its_inputs_alone():
     # The app rebuilds the plan on every Streamlit rerun; a builder that writes into the
     # dicts it is handed makes the second build read the first one's leavings.
     tasks = [task(confidence=0.5), task(decision="UPDATE", target_id="86abc")]
-    decisions = [meeting_decision(confidence=0.3)]
+    meeting_decisions = [meeting_decision(confidence=0.3)]
     board = copy.deepcopy(BOARD)
-    before = copy.deepcopy((tasks, decisions, board))
-    build_plan(tasks, decisions, board, "list1")
-    assert (tasks, decisions, board) == before
+    before = copy.deepcopy((tasks, meeting_decisions, board))
+    build_plan(tasks, meeting_decisions, board, "list1")
+    assert (tasks, meeting_decisions, board) == before
 
 
 def test_a_second_gate_reads_the_same_matches_afresh():

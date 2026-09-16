@@ -60,7 +60,7 @@ from src.reconcile import reconcile  # noqa: E402
 
 EFFECTS = ("create", "comment", "ask", "verify_deadline", "verify_status")
 UNIMPLEMENTED = ("verify_deadline", "verify_status")
-DECISIONS_PATH = ROOT / "evals" / "effect_decisions.json"
+MATCHES_PATH = ROOT / "evals" / "effect_decisions.json"
 SWEEP_PATH = ROOT / "evals" / "threshold_sweep.md"
 
 
@@ -102,7 +102,7 @@ def load_sets(only: str | None = None) -> list[dict]:
     return sets
 
 
-def decide_raw(entries: list[dict], board: list[dict]) -> list[dict]:
+def match_raw(entries: list[dict], board: list[dict]) -> list[dict]:
     """Route every point through the real reconciler. One model call per point."""
     # An entry is read with the same definition production reads a point with, so the
     # text this harness measures on is the text the pipeline would key on.
@@ -110,19 +110,24 @@ def decide_raw(entries: list[dict], board: list[dict]) -> list[dict]:
     return reconcile(points, board)
 
 
-def effects_from(entries: list[dict], decisions: list[dict], threshold: float = GATE) -> list[dict]:
-    """Flatten raw decisions to one effect each, at a given confidence gate.
+def effects_from(entries: list[dict], matches: list[dict], threshold: float = GATE) -> list[dict]:
+    """Flatten raw matches to one effect each, at a given confidence gate.
+
+    The saved file and its `decisions` key keep their spelling — they are a format, and
+    a re-spelling would orphan every run already recorded. What they hold is a match:
+    the agent's answer for one point.
+
 
     Pure and free. The model call is the expensive half of this harness and the gate is
-    the cheap one, which is why the raw decisions are kept rather than discarded after
+    the cheap one, which is why the raw matches are kept rather than discarded after
     scoring: asking where the threshold should sit is then a re-read, not another run.
 
     The plan is what production routes with, so it is what this measures. Building one
-    leaves the saved decisions untouched, which is why the same file can be scored at ten
+    leaves the saved matches untouched, which is why the same file can be scored at ten
     gates in a row. No board is read and no scope is named: a plan built for scoring
     names no rows and is written nowhere — only the routing is being measured here.
     """
-    plan = build_plan(decisions, [], [], "", threshold, board_read=False)
+    plan = build_plan(matches, [], [], "", threshold, board_read=False)
     return [
         {
             "id": entry["id"],
@@ -137,27 +142,27 @@ def effects_from(entries: list[dict], decisions: list[dict], threshold: float = 
     ]
 
 
-def save_decisions(raw: dict) -> None:
+def save_matches(raw: dict) -> None:
     """Persist what the agent actually said, so calibration costs nothing to re-ask."""
-    DECISIONS_PATH.write_text(
+    MATCHES_PATH.write_text(
         json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     n = sum(len(v["decisions"]) for v in raw.values())
-    print(f"written: evals/{DECISIONS_PATH.name} ({n} raw decisions)")
+    print(f"written: evals/{MATCHES_PATH.name} ({n} raw decisions)")
 
 
-def load_decisions() -> dict:
-    if not DECISIONS_PATH.exists():
+def load_matches() -> dict:
+    if not MATCHES_PATH.exists():
         raise SystemExit(
-            f"no saved decisions at evals/{DECISIONS_PATH.name} — run the eval once "
+            f"no saved decisions at evals/{MATCHES_PATH.name} — run the eval once "
             "without --replay/--sweep to populate it"
         )
-    return json.loads(DECISIONS_PATH.read_text(encoding="utf-8"))
+    return json.loads(MATCHES_PATH.read_text(encoding="utf-8"))
 
 
-def score(entries: list[dict], decided: list[dict]) -> dict:
+def score(entries: list[dict], effects: list[dict]) -> dict:
     """Compare intended effects with chosen ones. Pure — no API, no files."""
-    by_id = {d["id"]: d for d in decided}
+    by_id = {row["id"]: row for row in effects}
     per_effect = {e: {"total": 0, "correct": 0} for e in EFFECTS}
     by_cause: dict[str, int] = {}
     effect_correct = 0
@@ -296,7 +301,7 @@ def sweep_report(sets: list[dict], cache: dict, thresholds: list[float]) -> str:
         f"# Threshold sweep — {date.today().isoformat()}",
         "",
         "Effect accuracy as a function of the confidence gate, recomputed from the saved "
-        f"decisions in `evals/{DECISIONS_PATH.name}`. No model was called: every row is the "
+        f"decisions in `evals/{MATCHES_PATH.name}`. No model was called: every row is the "
         "same set of replies scored at a different threshold.",
         "",
         "**This cannot tell you where to set the gate.** It is scored against the same "
@@ -314,12 +319,12 @@ def sweep_report(sets: list[dict], cache: dict, thresholds: list[float]) -> str:
     for t in thresholds:
         cells, correct, total, escalated = [], 0, 0, 0
         for s in sets:
-            decided = effects_from(s["entries"], cache[s["name"]]["decisions"], t)
-            sc = score(s["entries"], decided)
+            chosen = effects_from(s["entries"], cache[s["name"]]["decisions"], t)
+            sc = score(s["entries"], chosen)
             cells.append(f"{sc['effect_correct'] / sc['total']:.0%}" if sc["total"] else "—")
             correct += sc["effect_correct"]
             total += sc["total"]
-            escalated += sum(1 for d in decided if d["effect"] == "ask")
+            escalated += sum(1 for row in chosen if row["effect"] == "ask")
         mark = " ←" if abs(t - GATE) < 1e-9 else ""
         lines.append(
             f"| {t:.2f}{mark} | " + " | ".join(cells) + f" | **{correct / total:.0%}** | {escalated} |"
@@ -373,7 +378,7 @@ def main() -> None:
         print(f"model calls that would run: {sum(len(s['entries']) for s in sets)}")
         return
 
-    cache = load_decisions() if replay else {}
+    cache = load_matches() if replay else {}
     if replay:
         missing = [s["name"] for s in sets if s["name"] not in cache]
         if missing:
@@ -397,14 +402,15 @@ def main() -> None:
         board = load_board_fixture(board_ref)
         print(f"\n=== {s['label']} · board {board_ref} ({len(board)} tasks) ===")
         if replay:
-            decisions = cache[s["name"]]["decisions"]
-            print(f"  replaying {len(decisions)} saved decisions at gate {threshold}")
+            matches = cache[s["name"]]["decisions"]
+            print(f"  replaying {len(matches)} saved decisions at gate {threshold}")
         else:
-            decisions = decide_raw(s["entries"], board)
-        raw[s["name"]] = dict(board=board_ref, decisions=decisions)
+            matches = match_raw(s["entries"], board)
+        # `decisions` is the saved file's own key, pinned; what it holds is a match.
+        raw[s["name"]] = dict(board=board_ref, decisions=matches)
 
-        decided = effects_from(s["entries"], decisions, threshold)
-        sc = score(s["entries"], decided)
+        chosen = effects_from(s["entries"], matches, threshold)
+        sc = score(s["entries"], chosen)
         acc = sc["effect_correct"] / sc["total"] if sc["total"] else 0.0
         print(f"  effect accuracy {acc:.0%} ({sc['effect_correct']}/{sc['total']})")
         if sc["by_cause"]:
@@ -414,7 +420,7 @@ def main() -> None:
     # Only a real run earns the right to overwrite the record. A replay is an
     # experiment on decisions already made, and must not restate them as new ones.
     if not replay:
-        save_decisions(raw)
+        save_matches(raw)
         (ROOT / "evals" / "effect_results.md").write_text(
             report(results, board_override), encoding="utf-8"
         )
