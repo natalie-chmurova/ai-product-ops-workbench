@@ -116,7 +116,11 @@ def _objects(data: dict, key: str, what: str, hint: str = "",
     whatever error the reader hit first — an AttributeError on a list, a KeyError on a
     space with no id — which tells a person nothing about what to do next.
     """
-    got = data.get(key) or []
+    got = data.get(key)
+    if got is None:
+        # ClickUp leaves a collection out, or sends it null, when it is empty; anything
+        # else under that key is an answer of a shape nobody here can read.
+        got = []
     if not isinstance(got, list):
         raise WorkbenchError(_said(
             f'Could not {what}: ClickUp sent "{key}" as {_kind(got)}, not a list.', hint))
