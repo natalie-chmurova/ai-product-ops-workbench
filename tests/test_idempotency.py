@@ -96,6 +96,21 @@ def test_a_meeting_decision_is_keyed_on_its_sentence_whatever_else_it_carries(mo
         assert comment_key({**decided, field: "a field meeting decisions lack today"}) == applied
 
 
+def test_reconcile_says_what_every_decision_affects(monkeypatch):
+    # The rule above recognises a meeting decision by the `affects` it carries, and
+    # reconcile_decisions stamps that field on every decision it hands on -- including one
+    # the extraction wrote without it. Were the stamp to go, a decision would read as an
+    # ordinary point, take its body from the fallback, and re-key in silence every comment
+    # already applied for it. So the rule's precondition is pinned here, beside the rule.
+    monkeypatch.setattr("src.reconcile.ask", lambda system, prompt, max_tokens=400: (
+        "DECISION: UPDATE\nTASK_ID: 86abc\nCONFIDENCE: 0.9\nREASON: same release"))
+    board = [{"id": "86abc", "name": "[Release] Cut the August release"}]
+    extracted = {"what": "Ship Wednesday", "detail": "as the call left it"}
+    decided = reconcile_decisions([extracted], board)[0]
+    assert "affects" in decided
+    assert comment_key(decided) == effect_key("UPDATE", "86abc", "Ship Wednesday")
+
+
 def test_store_empty_is_not_duplicate(tmp_path):
     store = IdempotencyStore(tmp_path / "s.jsonl")
     assert store.is_duplicate("abc") is False
