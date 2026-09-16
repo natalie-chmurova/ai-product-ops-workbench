@@ -204,8 +204,11 @@ def get_members() -> list[dict]:
     Lives here, with every other ClickUp request, so that one function carries the token
     and says what a failure was; resolving a name against these members is
     `src/assignees.py`'s pure work. The same two absences as the other reads: no
-    CLICKUP_TEAM_ID -> [], configured but failing -> WorkbenchError. `known_members()` is
-    the one caller allowed to turn that failure into an unassigned task.
+    CLICKUP_TEAM_ID -> [], configured but failing -> WorkbenchError.
+
+    This is the read that raises. `members_if_readable()` is the one caller allowed to
+    turn that failure into an unassigned task, and its name is the whole difference
+    between the two.
     """
     team_id = os.environ.get("CLICKUP_TEAM_ID")
     if not team_id:
@@ -223,13 +226,14 @@ def get_members() -> list[dict]:
     return []
 
 
-def known_members() -> list[dict]:
-    """The workspace's members when the tracker can be read, and none when it cannot.
+def members_if_readable() -> list[dict]:
+    """`get_members()` when the tracker can be read, and none when it cannot.
 
-    The one place a member read is allowed to degrade. An owner who cannot be resolved
-    leaves a task unassigned, and a roster that cannot be read leaves the prompts reading
-    names out of the transcript — both smaller failures than refusing to run. Every other
-    read raises, because a board that reads as empty turns every point into new work.
+    The one place a tracker read is allowed to degrade, and the name says so: an owner
+    who cannot be resolved leaves a task unassigned, and a roster that cannot be read
+    leaves the prompts reading names out of the transcript — both smaller failures than
+    refusing to run. Every other read raises, because a board that reads as empty turns
+    every point into new work.
     """
     try:
         return get_members()
@@ -241,13 +245,13 @@ def team_roster() -> list[dict]:
     """The live roster: this workspace's members plus the configured aliases.
 
     Never raises, because the roster is read before every run and is not what a run is
-    for: a member read that failed becomes no members in `known_members`, so with no
+    for: a failed member read becomes no members in `members_if_readable`, so with no
     credentials — or a tracker that cannot be reached — you still get the aliases, and
     with nothing configured at all the prompts fall back to reading names out of the
     transcript. It lives here, with the read it degrades, rather than in the module about
     names, which talks to no tracker.
     """
-    return build_roster(known_members(), os.environ.get("OWNER_ALIASES", ""))
+    return build_roster(members_if_readable(), os.environ.get("OWNER_ALIASES", ""))
 
 
 def get_tasks(list_id: str | None = None, include_closed: bool = False) -> list[dict]:
@@ -419,7 +423,7 @@ def push_context() -> tuple[list[dict], dict[str, str], str | None]:
     # A newly found defect belongs in the backlog, not in the running sprint. With no
     # backlog list configured everything still lands in the main list, tagged with
     # the intended destination, so nothing is silently lost.
-    return known_members(), alias_map(), os.environ.get("CLICKUP_BACKLOG_LIST_ID")
+    return members_if_readable(), alias_map(), os.environ.get("CLICKUP_BACKLOG_LIST_ID")
 
 
 def push_one(

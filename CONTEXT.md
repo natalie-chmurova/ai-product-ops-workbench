@@ -50,6 +50,10 @@ _Avoid_: target list, list id
 **Board fixture**:
 A board read from a file instead of the tracker, so a transcript can be checked against a board from its own world.
 
+**Roster**:
+The people a run can assign work to: the tracker workspace's members, plus the configured aliases. Reading the members is the one tracker read allowed to degrade — with no roster, owners go unresolved and the prompts read names out of the transcript, which is smaller than refusing to run. So the pair is named for that difference: `get_members` raises like every other read, `members_if_readable` is the one that returns none instead.
+_Avoid_: team, assignees (for the set of people)
+
 ### Reconciling
 
 **Point**:
