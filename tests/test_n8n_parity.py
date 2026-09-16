@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 from datetime import datetime, timezone
@@ -11,7 +12,7 @@ import pytest
 
 from scripts.sync_n8n_match_prompt import NODE, find_node, patch, render
 from src.clickup import _task_row
-from src.idempotency import comment_key, create_key
+from src.idempotency import IdempotencyStore, comment_key, create_key
 from src.reconcile import board_summary, parse_decision, reconcile
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -137,6 +138,18 @@ def test_state_and_log_both_live_under_wb_home():
         code = _node(name)["parameters"]["jsCode"]
         assert "$env.WB_HOME" in code, name
         assert "'state/processed_effects.jsonl'" not in code, name
+
+
+def test_the_app_and_the_nodes_resolve_one_store_file(tmp_path, monkeypatch):
+    # Two processes append to this file and each reads what the other wrote, so they must
+    # resolve it by one rule, not by being handed the same path. The nodes' own line is
+    # the oracle: take the path they build under WB_HOME and hold the store's to it.
+    monkeypatch.setenv("WB_HOME", str(tmp_path))
+    for name in ("Idempotency check", "Mark processed"):
+        code = _node(name)["parameters"]["jsCode"]
+        under_wb_home = re.search(r"const STORE = base \+ '([^']+)';", code)
+        assert under_wb_home, f"{name} no longer builds STORE from base"
+        assert IdempotencyStore().path == Path(str(tmp_path) + under_wb_home.group(1)), name
 
 
 def test_mark_processed_commits_one_effect_not_the_whole_batch():

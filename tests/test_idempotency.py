@@ -115,6 +115,26 @@ def test_reconcile_says_what_every_decision_affects(monkeypatch):
     assert comment_key(decided) == effect_key("UPDATE", "86abc", "Ship Wednesday")
 
 
+# --- the file the store and the n8n nodes share ---
+
+CHECKOUT = Path(__file__).resolve().parent.parent
+
+
+def test_the_store_finds_its_file_under_wb_home(tmp_path, monkeypatch):
+    # n8n runs outside the checkout and is pointed at it by WB_HOME. The store answers
+    # "which file" the same way its nodes do, so the two share one file by construction
+    # rather than by both being handed the same path.
+    monkeypatch.setenv("WB_HOME", str(tmp_path))
+    assert IdempotencyStore().path == tmp_path / "state" / "processed_effects.jsonl"
+
+
+def test_without_wb_home_the_store_file_is_the_checkout_s(monkeypatch):
+    # Derived from one module's own location instead, two checkouts — or a packaged
+    # install — quietly kept two stores, and every effect already applied came back new.
+    monkeypatch.delenv("WB_HOME", raising=False)
+    assert IdempotencyStore().path == CHECKOUT / "state" / "processed_effects.jsonl"
+
+
 # --- the store runs an effect at most once ---
 
 # What the caller says about the effect it is running. The store adds the key and the

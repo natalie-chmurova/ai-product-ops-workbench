@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -148,11 +149,29 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
+_CHECKOUT = Path(__file__).resolve().parent.parent
+
+
+def store_path() -> Path:
+    """The file the app and the n8n workflow both append to, and both read.
+
+    WB_HOME when it is set, this checkout otherwise -- the rule the Idempotency check
+    and Mark processed nodes resolve their STORE by, so the two sides name one file
+    without either being told which. Read at the moment a store is opened, not at
+    import, so a run that sets WB_HOME is obeyed.
+
+    The app used to derive it from the location of the module doing the applying, and
+    two checkouts -- or a packaged install -- then quietly kept two stores: every effect
+    one of them had applied came back as new in the other.
+    """
+    return Path(os.environ.get("WB_HOME") or _CHECKOUT) / "state" / "processed_effects.jsonl"
+
+
 class IdempotencyStore:
     """Append-only JSONL store of applied-effect keys, and the one operation that runs an
     effect against it.
 
-        store = IdempotencyStore(Path("state/processed_effects.jsonl"))
+        store = IdempotencyStore()          # the file the n8n nodes append to as well
         attempt = store.apply_once(comment_key(point),
                                    lambda: add_comment(point["target_id"], text),
                                    kind="UPDATE", target=point["target_id"],
@@ -166,8 +185,10 @@ class IdempotencyStore:
     after it was reported as already applied although nothing had been written.
     """
 
-    def __init__(self, path: Path) -> None:
-        self.path = Path(path)
+    def __init__(self, path: Path | None = None) -> None:
+        # A caller with no file in mind gets the one this checkout shares with n8n; a
+        # test gets its own. Nobody has to know where the shared one is.
+        self.path = Path(path) if path is not None else store_path()
         # Three sets, because the outcomes are three different facts: what the file held
         # before this run, what this run has written, and what it is running right now.
         self._before: set = self._keys_on_file()

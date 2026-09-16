@@ -67,6 +67,17 @@ def test_every_effect_goes_to_the_list_the_plan_was_built_against(monkeypatch, t
     assert [c[1] for c in created] == ["list1"]
 
 
+def test_a_click_with_no_store_of_its_own_writes_where_n8n_reads(monkeypatch, tmp_path):
+    # Which file the store is, is the store's own question: WB_HOME, as the n8n nodes
+    # resolve it. Apply holding a path of its own, derived from its own module's
+    # location, is how a second checkout came to keep a second store.
+    monkeypatch.setenv("WB_HOME", str(tmp_path))
+    _wire(monkeypatch)
+    apply.apply_plan(_plan(), when="2026-09-09")
+    written = (tmp_path / "state" / "processed_effects.jsonl").read_text(encoding="utf-8")
+    assert len(written.splitlines()) == 2
+
+
 def test_a_plan_with_no_list_is_refused_rather_than_sent_to_the_environments(monkeypatch,
                                                                              tmp_path):
     monkeypatch.setenv("CLICKUP_LIST_ID", "list-from-env")

@@ -10,7 +10,6 @@ leaves the effect free to be retried.
 from __future__ import annotations
 
 from datetime import date
-from pathlib import Path
 
 from .clickup import add_comment, list_url, push_context, push_one
 from .client import WorkbenchError
@@ -25,8 +24,6 @@ from .idempotency import (
     create_key,
 )
 from .plan import Plan
-
-STORE_PATH = Path(__file__).resolve().parent.parent / "state" / "processed_effects.jsonl"
 
 # Which side of the shared store wrote a record. The n8n workflow writes "sync" into the
 # same file; this is the app.
@@ -77,7 +74,10 @@ def apply_plan(
     create, comment = plan.create, plan.comment
     if not create and not comment:
         raise WorkbenchError("The plan has nothing to apply.")
-    store = store or IdempotencyStore(STORE_PATH)
+    # Where the store keeps its records is the store's own business, and it is the
+    # file n8n appends to; a path derived here, from this module's location, was a
+    # second answer to that question.
+    store = store or IdempotencyStore()
     # The caller passes the meeting's date. Today is only the fallback for a caller that
     # has none — and it never reaches the key, so the fallback cannot cause a second
     # comment tomorrow.
