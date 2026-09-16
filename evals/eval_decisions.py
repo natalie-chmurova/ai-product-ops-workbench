@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
-"""Agent-decision eval: is the board-sync agent's NEW-vs-UPDATE call correct?
+"""Match eval: is the board-sync agent's NEW-vs-UPDATE call correct?
 
-This evaluates the *agentic decision* at the heart of the board-sync workflow —
-not just whether tasks were extracted, but whether the agent correctly decides
-that a meeting point is new work vs. an update to an existing task, and (for
-updates) picks the right task.
+This evaluates the *match* at the heart of the board-sync workflow — not just
+whether tasks were extracted, but whether the agent correctly answers that a
+meeting point is new work vs. an update to an existing task, and (for updates)
+picks the right row. The file keeps its name: `decision` is the wire word, in
+the reply's DECISION: line and in every record this harness scores.
 
-Because the decision is categorical, it is scored by exact match against a
+Because the answer is categorical, it is scored by exact match against a
 labeled ground truth — no LLM judge needed. Runs N times (the model is
 non-deterministic) and averages.
 
 This harness calls `src.reconcile.match_one` — the same production match step
 the pipeline and the n8n Match agent node use — instead of keeping its own copy
 of the board text and the reply parsing. It used to keep a copy, which drifted:
-it was still measuring an agent that had never been told a decision is an
-UPDATE, or that work already under way is not a second task (fixed in WB-21).
+it was still measuring an agent that had never been told a meeting decision is
+an UPDATE, or that work already under way is not a second task (fixed in WB-21).
 
 Metrics:
   decision accuracy = correct NEW/UPDATE calls / total points

@@ -3,7 +3,7 @@
 
 Deterministic guard so re-processing the same meeting does not create
 duplicate tasks or comments. Keyed on the *applied effect* (an UPDATE comment
-on a task, or a NEW task), computed after the Match agent's decision.
+on a task, or a NEW task), computed after the Match agent's answer.
 
 This one module answers "what is this effect's key": which text a point contributes (its
 name and body, by name_and_body, which reconcile.py reads points with too), how that text

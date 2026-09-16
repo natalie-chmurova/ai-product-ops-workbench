@@ -132,7 +132,7 @@ def render_metrics(context: dict, tasks: list) -> None:
         ("n", len(tasks), "Tasks"),
         ("accent", urgent, "Urgent"),
         ("n", bugs, "Bugs"),
-        ("n", meeting_decisions, "Decisions"),
+        ("n", meeting_decisions, "Meeting decisions"),
     ]
     html_parts = ['<div class="wb-metrics">']
     for kind, num, label in cards:

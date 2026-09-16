@@ -141,7 +141,7 @@ def reconcile_meeting_decisions(meeting_decisions: list[dict],
             match = match_one(name, f"This decision changes: {affects}", board)
         else:
             match = {"decision": "NEW", "target_id": "", "confidence": 0.0,
-                     "reason": "no board to match the decision against"}
+                     "reason": "no board to match this meeting decision against"}
 
         # NEW is meaningless here: if nothing matched, a human looks at it.
         effect = "comment" if match["target_id"] else "ask"

@@ -52,7 +52,10 @@ A board read from a file instead of the tracker, so a transcript can be checked 
 
 **Roster**:
 The people a run can assign work to: the tracker workspace's members, plus the configured aliases. Reading the members is the one tracker read allowed to degrade — with no roster, owners go unresolved and the prompts read names out of the transcript, which is smaller than refusing to run. So the pair is named for that difference: `get_members` raises like every other read, `members_if_readable` is the one that returns none instead.
-_Avoid_: team, assignees (for the set of people)
+_Avoid_: members (for the roster as a whole — the members are the tracker's half of it).
+`team_roster` and the prompts' `TEAM ROSTER:` line keep "team", which is the tracker's own
+word for a workspace; `src/assignees.py` keeps "assignees" because a ClickUp assignee is
+what a resolved name becomes.
 
 ### Reconciling
 
@@ -82,7 +85,7 @@ What happens to one point: create a task, comment on an existing one, or ask a p
 _Avoid_: action, outcome
 
 **Effect kind**:
-Which of those three an effect is: `create`, `comment` or `ask`. An intent is an effect kind too — the one the agent would have chosen with the gate ignored.
+Which of those three an effect is: `create`, `comment` or `ask`. An intent is written in the same words, less `ask` — a person is never asked to ask — and is empty when there is nothing safe to do.
 _Avoid_: kind (on its own), action
 
 **Intent**:
@@ -100,3 +103,6 @@ _Avoid_: send, push, sync
 **Effect key**:
 The fingerprint of one effect, computed identically by the app and the n8n workflow, that makes applying the same effect a second time write nothing.
 _Avoid_: hash
+
+**NEW / UPDATE**:
+The two words a match answers with, and the wire format wherever an effect is written down: the `DECISION:` line of the match reply, the `decision` field of a stored match, and the `kind` of a record in `state/processed_effects.jsonl`, which the n8n nodes read and write too. In Python the value is `new_or_update`; the spellings above are pinned and never renamed, which is why `kind` survives in the store beside the two kinds the glossary does name.
