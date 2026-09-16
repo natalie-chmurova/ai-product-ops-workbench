@@ -180,8 +180,12 @@ def render_apply(result: dict) -> None:
         st.caption("No ClickUp list was selected for this run, so the plan cannot be applied.")
         return
     # The plan belongs to the board it was reconciled against. If the picker has moved
-    # since, applying would write into a board this plan never saw.
+    # since, applying would write into a board this plan never saw. A rerun whose list
+    # read failed has no picker value at all, which is a different fact and reads below
+    # as itself: the plan still belongs to the list it was built against, and that is the
+    # list Apply writes to.
     stale = st.session_state.get("scope_choice_id", plan.scope) != plan.scope
+    read_error = st.session_state.get("scope_read_error", "")
     # The same counts the Board plan tab shows, off the same value: while the tab counted
     # tasks and this caption counted tasks and meeting decisions, one run read "ask a
     # human 2" in the tab and "ask a human 4" here.
@@ -199,6 +203,13 @@ def render_apply(result: dict) -> None:
                 "The list changed after this plan was built. Generate again before applying — "
                 "writing a plan to a board it was not reconciled against is how duplicates "
                 "are made."
+            )
+        elif read_error:
+            st.warning(
+                "The ClickUp lists could not be read just now, so the picker above is "
+                f"empty:\n\n{read_error}\n\nThis plan is unaffected — it is applied to the "
+                "list it was built against — but a write may fail for the same reason, and "
+                "it would be reported below."
             )
         # Items below the gate are applied only when a person ticks them, one by one,
         # the way the agent intended. This is the human in the loop, not auto-apply.
@@ -321,7 +332,15 @@ with left:
         scope_label = "the list from .env" if default_id else "No ClickUp list configured"
         c_scope.caption("ClickUp list: the one from .env" if default_id
                         else "No ClickUp list configured — every point will count as new")
-    st.session_state["scope_choice_id"] = scope_id
+    # A list read that failed is not a picker pointing somewhere else. Leaving the last
+    # value it offered in place keeps the stale check to the one thing it is for — a plan
+    # about to be written to a board it was never reconciled against — and the read
+    # failure is shown for what it is, here and again over the Apply button. Reported as
+    # "the list changed after this plan was built", it sent people looking for a change
+    # nobody had made.
+    st.session_state["scope_read_error"] = lists_error
+    if not lists_error:
+        st.session_state["scope_choice_id"] = scope_id
     # The date that goes into every comment is the date of the MEETING, not of the
     # click. It is also excluded from the idempotency key (Task 4), so re-applying the
     # same plan on another day stays a no-op. render_apply reads it at the Apply click,
