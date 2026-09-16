@@ -52,9 +52,10 @@ def apply_plan(
             "This plan was built without a ClickUp list, so there is nothing to apply it "
             "to. Pick a list and generate again."
         )
-    ticked = [e for e in approved if e.intent]
-    create = list(plan.create) + [e for e in ticked if e.intent == "create"]
-    comment = list(plan.comment) + [e for e in ticked if e.intent == "comment"]
+    # What a ticked ask becomes is the plan's own rule; asking the plan for it keeps
+    # this module to writing, and keeps one routing in one place.
+    plan = plan.with_approved(approved)
+    create, comment = plan.create, plan.comment
     if not create and not comment:
         raise WorkbenchError("The plan has nothing to apply.")
     store = store or IdempotencyStore(STORE_PATH)
