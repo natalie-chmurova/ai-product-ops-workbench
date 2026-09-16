@@ -2,12 +2,9 @@
 
 from src.reconcile import (
     board_summary,
-    decisions_markdown,
     parse_decision,
-    plan_markdown,
     reconcile,
     reconcile_decisions,
-    split_by_confidence,
 )
 
 BOARD = [
@@ -73,39 +70,7 @@ def test_off_board_update_explains_itself():
     assert "not on the board" in d["reason"]
 
 
-# --- turning decisions into a plan of board effects ---
-
-DECISIONS = [
-    {"name": "New alerting", "decision": "NEW", "target_id": "", "confidence": 0.9, "reason": "r1"},
-    {"name": "Saved cards update", "decision": "UPDATE", "target_id": "86abc",
-     "confidence": 0.9, "reason": "r2"},
-    {"name": "Unclear one", "decision": "UPDATE", "target_id": "86def",
-     "confidence": 0.4, "reason": "torn between two"},
-]
-
-
-def test_split_by_confidence_routes_low_confidence_to_human():
-    create, comment, ask = split_by_confidence(DECISIONS, threshold=0.8)
-    assert [d["name"] for d in create] == ["New alerting"]
-    assert [d["name"] for d in comment] == ["Saved cards update"]
-    assert [d["name"] for d in ask] == ["Unclear one"]
-
-
-def test_plan_lists_every_item_once():
-    md = plan_markdown(DECISIONS, BOARD, threshold=0.8)
-    for name in ("New alerting", "Saved cards update", "Unclear one"):
-        assert md.count(name) == 1
-
-
-def test_plan_names_the_target_task_for_comments():
-    md = plan_markdown(DECISIONS, BOARD, threshold=0.8)
-    # a comment is only actionable if you can see which task it lands on
-    assert "[Payments] Fix saved cards" in md
-
-
-def test_plan_on_empty_board_says_so():
-    md = plan_markdown([], [], threshold=0.8)
-    assert "no open tasks" in md.lower()
+# --- matching a point to the board ---
 
 
 def test_reconcile_normalises_stage1_field_names():
@@ -123,46 +88,6 @@ def test_decisions_never_become_new_work():
     out = reconcile_decisions([{"what": "Ship Wednesday, cut payments", "affects": "the release"}], [])
     assert out[0]["effect"] == "ask"          # no board -> a human looks at it
     assert "create" not in str(out).lower() or out[0]["effect"] != "create"
-
-
-def test_decisions_markdown_shows_target_and_kind():
-    decided = [{"name": "Ship Wednesday, cut payments", "affects": "release", "kind": "scope_change",
-                "effect": "comment", "target_id": "86abc", "confidence": 0.9, "reason": "same release"}]
-    md = decisions_markdown(decided, BOARD, threshold=0.8)
-    assert "scope_change" in md
-    assert "[Payments] Fix saved cards" in md
-
-
-def test_low_confidence_decision_goes_to_a_human():
-    decided = [{"name": "Something vague", "affects": "?", "kind": "other",
-                "effect": "comment", "target_id": "86abc", "confidence": 0.3, "reason": "unsure"}]
-    md = decisions_markdown(decided, BOARD, threshold=0.8)
-    assert "ask a human" in md
-
-
-def test_a_doubtful_decision_shows_its_proposed_target():
-    # The person asked is checking the match itself, so the task it would land on is shown.
-    decided = [{"name": "Something vague", "affects": "?", "kind": "other",
-                "effect": "comment", "target_id": "86abc", "confidence": 0.3, "reason": "unsure"}]
-    md = decisions_markdown(decided, BOARD, threshold=0.8)
-    assert "ask a human" in md
-    assert "[Payments] Fix saved cards" in md and "86abc" in md
-
-
-def test_a_doubtful_update_in_the_plan_shows_its_proposed_target():
-    # A doubtful comment names the task it would land on, name and id. A doubtful create
-    # lands on none, even when the agent's reply named an id.
-    decisions = [
-        {"name": "Unclear one", "decision": "UPDATE", "target_id": "86def",
-         "confidence": 0.4, "reason": "torn between two"},
-        {"name": "Maybe new", "decision": "NEW", "target_id": "86abc",
-         "confidence": 0.5, "reason": "not sure it is new"},
-    ]
-    ask_lines = plan_markdown(decisions, BOARD, threshold=0.8).split("## Ask a human")[1].splitlines()
-    update_line = next(line for line in ask_lines if "Unclear one" in line)
-    new_line = next(line for line in ask_lines if "Maybe new" in line)
-    assert "[Android] Crash on product detail" in update_line and "86def" in update_line
-    assert "86abc" not in new_line and "[Payments] Fix saved cards" not in new_line
 
 
 def test_reconcile_on_empty_board_makes_no_decision_call():

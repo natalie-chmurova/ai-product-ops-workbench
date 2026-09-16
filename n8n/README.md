@@ -56,7 +56,7 @@ fails whenever the two differ.
 
 The two `Confident?` IF nodes compare against a literal `0.8`, and the `Log decision`
 node labels each decision `auto` or `human` with its own `>= 0.8`. The Python side keeps
-the same number in `src.reconcile.GATE`; if one of the four moves, move the others.
+the same number in `src.plan.GATE`; if one of the four moves, move the others.
 
 ## One approval per run
 

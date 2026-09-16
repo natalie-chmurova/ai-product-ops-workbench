@@ -133,7 +133,7 @@ def test_summary_joins_several_assignees():
 
 # --- why an escalation happened -----------------------------------------------
 
-from src.reconcile import parse_decision, split_by_confidence
+from src.reconcile import parse_decision
 
 SMALL_BOARD = [{"id": "86abc", "name": "[Payments] Fix saved cards"}]
 
@@ -154,20 +154,6 @@ def test_update_naming_a_task_not_on_the_board():
 def test_an_honest_answer_has_no_failure_cause():
     reply = "DECISION: UPDATE\nTASK_ID: 86abc\nCONFIDENCE: 0.9\nREASON: same work"
     assert parse_decision(reply, SMALL_BOARD)["escalation_cause"] == ""
-
-
-def test_the_gate_labels_honest_doubt():
-    doubtful = {"name": "x", "decision": "NEW", "target_id": "", "confidence": 0.5, "escalation_cause": ""}
-    broken = {"name": "y", "decision": "UPDATE", "target_id": "", "confidence": 0.0, "escalation_cause": "unreadable"}
-    _, _, ask = split_by_confidence([doubtful, broken])
-    assert [d["escalation_cause"] for d in ask] == ["low_confidence", "unreadable"]
-
-
-def test_the_gate_does_not_relabel_a_confident_decision():
-    confident = {"name": "z", "decision": "NEW", "target_id": "", "confidence": 0.95, "escalation_cause": ""}
-    create, _, ask = split_by_confidence([confident])
-    assert not ask
-    assert create[0]["escalation_cause"] == ""
 
 
 # --- scoring the effect -------------------------------------------------------
