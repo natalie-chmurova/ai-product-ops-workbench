@@ -30,8 +30,20 @@ GATE = 0.8
 
 # Where a point came from. A task can be created; a meeting decision changes work
 # already under way and never can, which is the one routing difference between them.
+# These are discriminators: what they are compared against, never what is shown.
 TASK = "task"
 MEETING_DECISION = "meeting decision"
+
+# What each source is called on screen. Separate from the discriminator on purpose: the
+# tag used to render the constant itself, so relabelling the display — "team decision",
+# say — would have re-keyed the routing at the same time, and a run's effects would have
+# changed because a word on a page did.
+_SOURCE_LABELS = {TASK: "task", MEETING_DECISION: "meeting decision"}
+
+
+def _source_label(source: str) -> str:
+    """Display text for a source, derived from the discriminator but not it."""
+    return _SOURCE_LABELS.get(source, source)
 
 
 @dataclass(frozen=True)
@@ -217,7 +229,8 @@ def _tag(effect: Effect) -> str:
     landing as a comment is a different thing from a task landing as one.
     """
     if effect.source == MEETING_DECISION:
-        return f"`{MEETING_DECISION} · {effect.point.get('kind') or 'other'}`"
+        return (f"`{_source_label(effect.source)} · "
+                f"{effect.point.get('kind') or 'other'}`")
     bits = [str(effect.point.get(k, "")).lower() for k in ("type", "destination")]
     bits = [b for b in bits if b]
     return f"`{' → '.join(bits)}`" if bits else ""
