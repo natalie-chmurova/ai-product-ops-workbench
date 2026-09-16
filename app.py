@@ -26,8 +26,8 @@ from src.artifacts import (
     build_sprint_summary,
     build_tasks,
 )
-from src.assignees import roster_line, team_roster
-from src.clickup import get_lists, get_tasks
+from src.assignees import roster_line
+from src.clickup import get_lists, get_tasks, team_roster
 from src.client import WorkbenchError
 from src.extract import extract_context
 from src.idempotency import ALREADY_APPLIED, REPEATED
@@ -254,7 +254,7 @@ def render_apply(result: dict) -> None:
                         f"{len(summary['failed'])} effect(s) didn't go through: "
                         + "; ".join(summary["failed"][:3])
                     )
-            except (WorkbenchError, ValueError) as exc:
+            except WorkbenchError as exc:
                 st.error(str(exc))
 
 
@@ -310,7 +310,7 @@ with left:
     if os.environ.get("CLICKUP_API_TOKEN"):
         try:
             lists = _cached_lists()
-        except (WorkbenchError, ValueError) as exc:
+        except WorkbenchError as exc:
             # Configured but failing is not "no list configured": it is a board that cannot
             # be read. Say why here; Generate refuses to run board-blind below.
             lists_error = str(exc)
@@ -409,6 +409,9 @@ with right:
             # A fresh plan means fresh choices for the items below the gate.
             for k in [k for k in st.session_state if str(k).startswith("ask_")]:
                 del st.session_state[k]
+        # ValueError as well as WorkbenchError: extract_context raises one for a
+        # transcript too short to be a meeting, and it is meant for the person to read.
+        # Every ClickUp failure arrives as a WorkbenchError from the one request path.
         except (WorkbenchError, ValueError) as exc:
             st.session_state["result"] = None
             st.error(str(exc))

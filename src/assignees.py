@@ -9,15 +9,14 @@ resolves a name to a workspace member id via, in order:
   3. otherwise None — the task is left unassigned (honest fallback).
 
 Nothing here talks to ClickUp: the members come in as an argument, from
-`src/clickup.py`, where the token and every request live. What is left is the work that
-can be read and tested on its own — the alias map, the roster and the resolution.
+`src/clickup.py`, where the token, every request and the live roster live. What is left
+is the work that can be read and tested on its own — the alias map, building a roster
+out of members and aliases, and the resolution.
 """
 
 from __future__ import annotations
 
 import os
-
-from .clickup import known_members
 
 
 def normalize(name: str | None) -> str:
@@ -70,17 +69,6 @@ def build_roster(members: list[dict], raw_aliases: str) -> list[dict]:
 def roster_line(roster: list[dict]) -> str:
     """Roster as a single line for a prompt: 'Dana, Marco, Priya'."""
     return ", ".join(r["name"] for r in roster)
-
-
-def team_roster() -> list[dict]:
-    """The live roster: tracker members plus configured aliases.
-
-    Never raises. A member read that failed becomes no members in one place,
-    `clickup.known_members`, so with no ClickUp credentials — or a tracker that cannot be
-    reached — you still get the aliases; with nothing configured at all you get an empty
-    roster, and the prompts simply fall back to reading names out of the transcript.
-    """
-    return build_roster(known_members(), os.environ.get("OWNER_ALIASES", ""))
 
 
 def resolve_owner(name: str | None, members: list[dict], aliases: dict[str, str]) -> str | None:

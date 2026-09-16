@@ -30,9 +30,9 @@ from src.artifacts import (
     build_sprint_summary,
     build_tasks,
 )
-from src.assignees import roster_line, team_roster
+from src.assignees import roster_line
 from src.client import WorkbenchError
-from src.clickup import get_tasks, load_board_fixture
+from src.clickup import get_tasks, load_board_fixture, team_roster
 from src.plan import MEETING_DECISION, build_plan, plan_markdown
 from src.reconcile import reconcile, reconcile_decisions
 from src.extract import extract_context
