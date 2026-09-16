@@ -18,7 +18,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 
 # Whitespace as JavaScript's \s defines it, which is also what String.prototype.trim()
@@ -119,44 +122,110 @@ def comment_key(point: dict) -> str:
     return effect_key("UPDATE", point.get("target_id", ""), comment_body(point))
 
 
+# What came of running one effect. Four outcomes, and they are four because the three
+# they replaced hid two facts: an effect that failed was reported as skipped, and an
+# effect repeated inside one run as one the store had seen before that run.
+APPLIED = "applied"
+ALREADY_APPLIED = "already applied"   # the key was in the store before this run
+REPEATED = "repeated"                 # an identical effect earlier in this run
+FAILED = "failed"
+
+OUTCOMES = (APPLIED, ALREADY_APPLIED, REPEATED, FAILED)
+
+
+@dataclass(frozen=True)
+class Attempt:
+    """What one effect came to: which of the four outcomes, and what the effect itself
+    reported — nothing, when it was not run."""
+
+    outcome: str
+    info: object = None
+
+
+def _now() -> str:
+    """The moment a record is written, as the n8n Mark processed node's
+    new Date().toISOString() writes it."""
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
 class IdempotencyStore:
-    """Append-only JSONL store of applied-effect keys.
+    """Append-only JSONL store of applied-effect keys, and the one operation that runs an
+    effect against it.
 
         store = IdempotencyStore(Path("state/processed_effects.jsonl"))
-        key = effect_key("UPDATE", target_id, comment)
-        if store.is_duplicate(key):
-            skip()
-        else:
-            store.mark_seen(key)   # reserve before applying (in-batch dedup)
-            apply_effect()         # the side effect
-            store.commit(key, {...})  # record only after success
+        attempt = store.apply_once(comment_key(point),
+                                   lambda: add_comment(point["target_id"], text),
+                                   kind="UPDATE", target=point["target_id"],
+                                   preview=point["name"], source="app")
+
+    `apply_once` owns the order the whole guard rests on — reserve the key, run the
+    effect, record it only if it succeeded — so that no caller writes that order out
+    again. It was three calls and a docstring saying what order to make them in; both
+    loops of `apply_plan` and the published demo wrote the order out by hand, and a
+    failed effect kept its reservation for the rest of the run, so an identical effect
+    after it was reported as already applied although nothing had been written.
     """
 
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
-        self._committed: set = set()
-        self._seen_this_run: set = set()
-        if self.path.exists():
-            for line in self.path.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    self._committed.add(json.loads(line)["key"])
-                except (json.JSONDecodeError, KeyError):
-                    continue  # tolerate a bad line, never crash the run
+        # Three sets, because the outcomes are three different facts: what the file held
+        # before this run, what this run has written, and what it is running right now.
+        self._before: set = self._keys_on_file()
+        self._applied: set = set()
+        self._reserved: set = set()
 
-    def is_duplicate(self, key: str) -> bool:
-        return key in self._committed or key in self._seen_this_run
+    def apply_once(self, key: str, effect: Callable[[], tuple], *, kind: str,
+                   target: str | None, preview: str, source: str) -> Attempt:
+        """Run `effect` unless this key has been applied already, and record it if it
+        succeeds.
 
-    def mark_seen(self, key: str) -> None:
-        self._seen_this_run.add(key)
+        `effect` takes no arguments and answers the way a write to the tracker answers:
+        `(ok, info)`. On ok the record is appended and the key is the store's from then
+        on; on not-ok nothing is written and the key is free again — in this run and the
+        next — so a failed effect is retried rather than looking applied. An effect that
+        raises frees its key too and the error goes on to the caller: this store guards
+        against applying an effect twice, not against the tracker falling over.
+        """
+        if key in self._before:
+            return Attempt(ALREADY_APPLIED)
+        if key in self._reserved or key in self._applied:
+            return Attempt(REPEATED)
+        self._reserved.add(key)
+        try:
+            ok, info = effect()
+        except BaseException:
+            self._reserved.discard(key)
+            raise
+        self._reserved.discard(key)
+        if not ok:
+            return Attempt(FAILED, info)
+        self._applied.add(key)
+        self._append(key, kind=kind, target=target, preview=preview, source=source)
+        return Attempt(APPLIED, info)
 
-    def commit(self, key: str, meta: dict) -> None:
-        """Append the key record. Call ONLY after a successful effect."""
-        self._committed.add(key)
-        self._seen_this_run.discard(key)
-        record = {"key": key, **meta}
+    def _keys_on_file(self) -> set:
+        keys = set()
+        if not self.path.exists():
+            return keys
+        for line in self.path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                keys.add(json.loads(line)["key"])
+            except (json.JSONDecodeError, KeyError):
+                continue  # tolerate a bad line, never crash the run
+        return keys
+
+    def _append(self, key: str, *, kind: str, target: str | None, preview: str,
+                source: str) -> None:
+        """One line per applied effect, in the format the n8n Mark processed node writes.
+
+        Both sides append to this file and both sides read it, so the record is composed
+        here rather than at each call site: `source` is all a caller says about itself.
+        """
+        record = {"key": key, "kind": kind, "target": target or None,
+                  "preview": (preview or "")[:60], "ts": _now(), "source": source}
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -181,26 +250,20 @@ def effects_from_log(path: Path) -> list:
     return effects
 
 
-def apply_batch(effects: list, store: IdempotencyStore) -> tuple:
-    """Mark-then-apply, mirroring the n8n check -> filter -> apply -> mark order.
+def apply_batch(effects: list, store: IdempotencyStore) -> dict:
+    """Run every effect through the store once, and count how each of them went.
 
-    Phase 1 marks fresh effects (in-batch dedup); phase 2 "applies" them (no
-    real side effect here) and commits the key only after that apply.
+    There is no real side effect here — this is the no-API demo — so each effect simply
+    reports success. What is being demonstrated is the store's order, and this asks for
+    it by the one operation rather than writing it out a third time.
     """
-    fresh = []
-    skipped = 0
+    counts = {outcome: 0 for outcome in OUTCOMES}
     for kind, target, content in effects:
-        key = effect_key(kind, target, content)
-        if store.is_duplicate(key):
-            skipped += 1
-        else:
-            store.mark_seen(key)
-            fresh.append((key, kind, target, content))
-    applied = 0
-    for key, kind, target, content in fresh:
-        store.commit(key, {"kind": kind, "target": target or None, "preview": content[:60]})
-        applied += 1
-    return applied, skipped
+        attempt = store.apply_once(
+            effect_key(kind, target, content), lambda: (True, None),
+            kind=kind, target=target, preview=content, source="demo")
+        counts[attempt.outcome] += 1
+    return counts
 
 
 def _demo() -> None:
@@ -209,13 +272,16 @@ def _demo() -> None:
     root = Path(__file__).resolve().parent.parent
     effects = effects_from_log(root / "evals" / "decision_log.jsonl")
     with tempfile.TemporaryDirectory() as d:
-        store = IdempotencyStore(Path(d) / "demo.jsonl")
-        a1, s1 = apply_batch(effects, store)
-        a2, s2 = apply_batch(effects, store)
+        # Two runs, two stores over one file: the second run knows what the first applied
+        # because it reads the records, which is how a second click — or n8n after the
+        # app — finds out too.
+        path = Path(d) / "demo.jsonl"
+        first = apply_batch(effects, IdempotencyStore(path))
+        second = apply_batch(effects, IdempotencyStore(path))
     print(f"effects in the meeting: {len(effects)}")
-    print(f"run 1:  applied={a1}  skipped={s1}")
-    print(f"run 2:  applied={a2}  skipped={s2}")
-    print(f"\nIdempotent: the second run applied {a2} new effects "
+    for label, counts in (("run 1", first), ("run 2", second)):
+        print(f"{label}:  " + "  ".join(f"{o}={counts[o]}" for o in OUTCOMES))
+    print(f"\nIdempotent: the second run applied {second[APPLIED]} new effects "
           f"(re-processing the same meeting is a no-op).")
 
 

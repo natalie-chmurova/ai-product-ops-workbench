@@ -6,6 +6,10 @@ from pathlib import Path
 import pytest
 
 from src.idempotency import (
+    ALREADY_APPLIED,
+    APPLIED,
+    FAILED,
+    REPEATED,
     IdempotencyStore,
     apply_batch,
     comment_key,
@@ -111,47 +115,121 @@ def test_reconcile_says_what_every_decision_affects(monkeypatch):
     assert comment_key(decided) == effect_key("UPDATE", "86abc", "Ship Wednesday")
 
 
-def test_store_empty_is_not_duplicate(tmp_path):
+# --- the store runs an effect at most once ---
+
+# What the caller says about the effect it is running. The store adds the key and the
+# timestamp and writes the record itself, so the format has one definition.
+RECORD = {"kind": "NEW", "target": None, "preview": "alert on CDN errors", "source": "app"}
+
+
+def _effect(ran: list, info: str = "done", ok: bool = True):
+    """An effect the store can run: it notes that it ran, and reports (ok, info) the way
+    a write to the tracker reports itself."""
+
+    def run():
+        ran.append(info)
+        return ok, info
+
+    return run
+
+
+def test_a_fresh_effect_runs_and_is_recorded(tmp_path):
+    path = tmp_path / "s.jsonl"
+    ran = []
+    attempt = IdempotencyStore(path).apply_once("k1", _effect(ran), **RECORD)
+    assert (attempt.outcome, attempt.info) == (APPLIED, "done")
+    assert ran == ["done"]
+    written = json.loads(path.read_text(encoding="utf-8"))
+    # The record the n8n Mark processed node writes, field for field and in its order:
+    # one store, one format, whichever side appended the line.
+    assert list(written) == ["key", "kind", "target", "preview", "ts", "source"]
+    assert {k: v for k, v in written.items() if k != "ts"} == dict(RECORD, key="k1")
+    assert written["ts"].endswith("Z")
+
+
+def test_a_record_keeps_the_first_60_characters_of_the_preview(tmp_path):
+    # The preview is a glance at what was applied, cut where the node cuts it.
+    path = tmp_path / "s.jsonl"
+    IdempotencyStore(path).apply_once("k1", _effect([]), **dict(RECORD, preview="x" * 80))
+    assert json.loads(path.read_text(encoding="utf-8"))["preview"] == "x" * 60
+
+
+def test_a_key_the_file_already_held_is_already_applied_and_nothing_runs(tmp_path):
+    # Two clicks are two store instances, and often two processes: what the first applied
+    # the second must read off the file, or the second click writes everything again.
+    path = tmp_path / "s.jsonl"
+    IdempotencyStore(path).apply_once("k1", _effect([]), **RECORD)
+    ran = []
+    attempt = IdempotencyStore(path).apply_once("k1", _effect(ran), **RECORD)
+    assert attempt.outcome == ALREADY_APPLIED
+    assert ran == [] and len(path.read_text(encoding="utf-8").splitlines()) == 1
+
+
+def test_a_second_identical_effect_in_one_run_is_a_repeat(tmp_path):
+    # It was applied a moment ago, by this run. Calling that "already applied" tells the
+    # person that the store stopped work it had seen before, which nothing had.
+    path = tmp_path / "s.jsonl"
+    store = IdempotencyStore(path)
+    store.apply_once("k1", _effect([]), **RECORD)
+    ran = []
+    assert store.apply_once("k1", _effect(ran), **RECORD).outcome == REPEATED
+    assert ran == [] and len(path.read_text(encoding="utf-8").splitlines()) == 1
+
+
+def test_a_failed_effect_keeps_no_key_and_does_not_block_an_identical_one_after_it(tmp_path):
+    # The reservation is released, so the same effect later in the same run is free to
+    # run — and nothing is left on disk for the next run to skip.
+    path = tmp_path / "s.jsonl"
+    store = IdempotencyStore(path)
+    ran = []
+    attempt = store.apply_once("k1", _effect(ran, "no permission", ok=False), **RECORD)
+    assert (attempt.outcome, attempt.info) == (FAILED, "no permission")
+    assert not path.exists()
+    assert store.apply_once("k1", _effect(ran, "retried"), **RECORD).outcome == APPLIED
+    assert ran == ["no permission", "retried"]
+
+
+def test_an_effect_that_raises_releases_its_key_and_the_error_reaches_the_caller(tmp_path):
+    # A traceback out of the tracker is no reason to record the effect as applied, nor to
+    # hold its key for the rest of the run — and it is not the store's to swallow.
     store = IdempotencyStore(tmp_path / "s.jsonl")
-    assert store.is_duplicate("abc") is False
+
+    def boom():
+        raise RuntimeError("the tracker fell over")
+
+    with pytest.raises(RuntimeError):
+        store.apply_once("k1", boom, **RECORD)
+    ran = []
+    assert store.apply_once("k1", _effect(ran), **RECORD).outcome == APPLIED
+    assert ran == ["done"]
 
 
-def test_commit_makes_key_duplicate_and_persists(tmp_path):
-    p = tmp_path / "s.jsonl"
-    store = IdempotencyStore(p)
-    store.commit("abc", {"kind": "NEW", "preview": "x"})
-    assert store.is_duplicate("abc") is True
-    # a fresh instance reads the committed key back from disk
-    assert IdempotencyStore(p).is_duplicate("abc") is True
-
-
-def test_mark_seen_catches_second_in_same_batch(tmp_path):
-    store = IdempotencyStore(tmp_path / "s.jsonl")
-    assert store.is_duplicate("k") is False
-    store.mark_seen("k")            # first effect, not yet applied/committed
-    assert store.is_duplicate("k") is True  # second identical effect in the batch
-
-
-def test_malformed_line_is_ignored(tmp_path):
+def test_a_malformed_line_is_tolerated(tmp_path):
     p = tmp_path / "s.jsonl"
     p.write_text('{"key": "good"}\nnot json\n{"nokey": 1}\n', encoding="utf-8")
-    store = IdempotencyStore(p)
-    assert store.is_duplicate("good") is True
+    ran = []
+    assert IdempotencyStore(p).apply_once("good", _effect(ran), **RECORD).outcome == ALREADY_APPLIED
+    assert ran == []
 
 
-def test_second_run_applies_nothing(tmp_path):
+# --- the published demo: the same meeting twice ---
+
+
+def test_a_second_run_of_the_same_meeting_applies_nothing(tmp_path):
+    # The second run is a second store, reading the first one's records off the file:
+    # that, not a set kept in memory, is what makes re-processing a meeting a no-op.
     effects = [("UPDATE", "t1", "saved cards unblocked"),
                ("NEW", "", "investigate ios funnel"),
                ("UPDATE", "t2", "crash fix in review")]
-    store = IdempotencyStore(tmp_path / "s.jsonl")
-    applied1, skipped1 = apply_batch(effects, store)
-    applied2, skipped2 = apply_batch(effects, store)
-    assert (applied1, skipped1) == (3, 0)
-    assert (applied2, skipped2) == (0, 3)
+    path = tmp_path / "s.jsonl"
+    first = apply_batch(effects, IdempotencyStore(path))
+    second = apply_batch(effects, IdempotencyStore(path))
+    assert first[APPLIED] == 3 and first[ALREADY_APPLIED] == 0
+    assert second[APPLIED] == 0 and second[ALREADY_APPLIED] == 3
 
 
-def test_duplicate_within_one_batch_applied_once(tmp_path):
+def test_the_same_effect_twice_in_one_run_is_applied_once_and_counted_as_a_repeat(tmp_path):
     effects = [("UPDATE", "t1", "same"), ("UPDATE", "t1", "same")]
-    store = IdempotencyStore(tmp_path / "s.jsonl")
-    applied, skipped = apply_batch(effects, store)
-    assert (applied, skipped) == (1, 1)
+    counts = apply_batch(effects, IdempotencyStore(tmp_path / "s.jsonl"))
+    assert counts[APPLIED] == 1
+    assert counts[REPEATED] == 1 and counts[ALREADY_APPLIED] == 0

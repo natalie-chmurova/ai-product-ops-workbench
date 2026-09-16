@@ -9,15 +9,28 @@ leaves the effect free to be retried.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date
 from pathlib import Path
 
 from .clickup import add_comment, list_url, push_context, push_one
 from .client import WorkbenchError
-from .idempotency import IdempotencyStore, comment_body, comment_key, create_key
+from .idempotency import (
+    ALREADY_APPLIED,
+    APPLIED,
+    FAILED,
+    Attempt,
+    IdempotencyStore,
+    comment_body,
+    comment_key,
+    create_key,
+)
 from .plan import Plan
 
 STORE_PATH = Path(__file__).resolve().parent.parent / "state" / "processed_effects.jsonl"
+
+# Which side of the shared store wrote a record. The n8n workflow writes "sync" into the
+# same file; this is the app.
+SOURCE = "app"
 
 
 def comment_text(point: dict, meeting_title: str, when: str) -> str:
@@ -29,8 +42,14 @@ def comment_text(point: dict, meeting_title: str, when: str) -> str:
     return f'From the meeting "{meeting_title}" ({when}):\n{comment_body(point)}'
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+def _count_unapplied(summary: dict, attempt: Attempt) -> None:
+    """An effect that never ran, counted as the reason it did not.
+
+    A repeat is not an "already applied": nothing had seen it before this click, and
+    telling a person it had sends them looking on the board for work that was
+    never written.
+    """
+    summary["already_applied" if attempt.outcome == ALREADY_APPLIED else "repeated"] += 1
 
 
 def apply_plan(
@@ -70,40 +89,44 @@ def apply_plan(
     members, aliases, _backlog_id = push_context()
 
     summary = {
-        "created": 0, "commented": 0, "skipped": 0, "assigned": 0, "backlog": 0,
-        "failed": [], "total": len(create) + len(comment),
+        "created": 0, "commented": 0, "already_applied": 0, "repeated": 0,
+        "assigned": 0, "backlog": 0, "failed": [], "total": len(create) + len(comment),
         "list_url": list_url(plan.scope),
     }
 
     for effect in create:
-        key = create_key(effect.point)
-        if store.is_duplicate(key):
-            summary["skipped"] += 1
-            continue
-        store.mark_seen(key)
-        res = push_one(effect.point, plan.scope, members, aliases, None)
-        if res["ok"]:
-            store.commit(key, {"kind": "NEW", "target": None,
-                               "preview": effect.name[:60], "ts": _now(), "source": "app"})
+        # The store runs the effect, so the order — reserve, write, record — is its
+        # own; here there is only the writing and the counting.
+        attempt = store.apply_once(
+            create_key(effect.point),
+            lambda e=effect: _push(e, plan.scope, members, aliases),
+            kind="NEW", target=None, preview=effect.name, source=SOURCE)
+        if attempt.outcome == APPLIED:
             summary["created"] += 1
-            summary["assigned"] += res["assigned"]
-            summary["backlog"] += res["backlog"]
+            summary["assigned"] += attempt.info["assigned"]
+            summary["backlog"] += attempt.info["backlog"]
+        elif attempt.outcome == FAILED:
+            summary["failed"].append(attempt.info["info"])
         else:
-            summary["failed"].append(res["info"])
+            _count_unapplied(summary, attempt)
 
     for effect in comment:
         text = comment_text(effect.point, meeting_title, when)
-        key = comment_key(effect.point)
-        if store.is_duplicate(key):
-            summary["skipped"] += 1
-            continue
-        store.mark_seen(key)
-        ok, info = add_comment(effect.target_id, text)
-        if ok:
-            store.commit(key, {"kind": "UPDATE", "target": effect.target_id,
-                               "preview": effect.name[:60], "ts": _now(), "source": "app"})
+        attempt = store.apply_once(
+            comment_key(effect.point),
+            lambda e=effect, t=text: add_comment(e.target_id, t),
+            kind="UPDATE", target=effect.target_id, preview=effect.name, source=SOURCE)
+        if attempt.outcome == APPLIED:
             summary["commented"] += 1
+        elif attempt.outcome == FAILED:
+            summary["failed"].append(attempt.info)
         else:
-            summary["failed"].append(info)
+            _count_unapplied(summary, attempt)
 
     return summary
+
+
+def _push(effect, scope: str, members: list, aliases: dict) -> tuple:
+    """Create one task, and report it the way every effect reports itself: (ok, info)."""
+    res = push_one(effect.point, scope, members, aliases, None)
+    return res["ok"], res

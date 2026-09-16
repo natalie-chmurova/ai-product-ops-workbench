@@ -52,7 +52,8 @@ def test_a_plan_is_applied_and_counted(monkeypatch, tmp_path):
                                when="2026-09-09")
     assert [c[0]["name"] for c in created] == ["[Dev] New alerting"]
     assert commented[0][0] == "86abc"
-    assert summary["created"] == 1 and summary["commented"] == 1 and summary["skipped"] == 0
+    assert summary["created"] == 1 and summary["commented"] == 1
+    assert summary["already_applied"] == 0 and summary["repeated"] == 0
     assert summary["total"] == 2
 
 
@@ -89,7 +90,31 @@ def test_the_second_click_applies_nothing(monkeypatch, tmp_path):
     again = apply.apply_plan(_plan(), store=IdempotencyStore(tmp_path / "s.jsonl"),
                              when="2026-09-09")
     assert len(created) == 1 and len(commented) == 1     # no second call was made
-    assert again["skipped"] == 2 and again["created"] == 0 and again["commented"] == 0
+    assert again["already_applied"] == 2
+    assert again["created"] == 0 and again["commented"] == 0
+
+
+def test_a_failure_is_not_a_skip_and_a_repeat_is_not_an_already_applied(monkeypatch,
+                                                                        tmp_path):
+    # One run holding one of each: a create the tracker refuses, a comment that goes
+    # through, and a second point whose comment is the same effect. Counted the old way
+    # the person read "skipped 1 already applied" for an effect the store had never seen,
+    # and the refused create vanished from the counts altogether.
+    created, commented = [], []
+    monkeypatch.setattr(apply, "push_context", lambda: ([], {}, None))
+    monkeypatch.setattr(apply, "push_one", lambda task, list_id, members, aliases, backlog: (
+        created.append(task) or {"ok": False, "info": "no permission on that list",
+                                 "assigned": False, "backlog": False}))
+    monkeypatch.setattr(apply, "add_comment", lambda task_id, text: (
+        commented.append(task_id) or (True, task_id)))
+    path = tmp_path / "s.jsonl"
+    summary = apply.apply_plan(_plan([CREATE, COMMENT, dict(COMMENT)]),
+                               store=IdempotencyStore(path), when="2026-09-09")
+    assert summary["created"] == 0 and summary["commented"] == 1
+    assert summary["failed"] == ["no permission on that list"]
+    assert summary["repeated"] == 1 and summary["already_applied"] == 0
+    assert len(commented) == 1  # the repeat reached neither the tracker
+    assert len(path.read_text(encoding="utf-8").splitlines()) == 1   # nor the store
 
 
 def test_an_effect_is_keyed_on_its_point_exactly_as_it_was(monkeypatch, tmp_path):
@@ -184,7 +209,7 @@ def test_the_same_plan_on_another_day_is_still_a_no_op(monkeypatch, tmp_path):
                      meeting_title="Weekly sync", when="2026-09-09")
     later = apply.apply_plan(_plan([COMMENT]), store=IdempotencyStore(tmp_path / "s.jsonl"),
                              meeting_title="Weekly sync", when="2026-09-10")
-    assert later["skipped"] == 1 and later["commented"] == 0
+    assert later["already_applied"] == 1 and later["commented"] == 0
 
 
 # --- the asks a person ticked -------------------------------------------------

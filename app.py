@@ -224,11 +224,18 @@ def render_apply(result: dict) -> None:
                         meeting_title=result["context"].get("meeting_title", ""),
                         when=meeting_date.isoformat() if meeting_date else None,
                     )
-                st.success(
-                    f"Created {summary['created']} · commented {summary['commented']} · "
-                    f"skipped {summary['skipped']} already applied · "
-                    f"{summary['assigned']} assigned to an owner."
-                )
+                # Each number is the thing it says it is. "Skipped N already applied"
+                # covered two different facts and a third that was neither: an effect
+                # the store had seen before, an effect this plan asked for twice, and —
+                # counted nowhere — an effect the tracker refused.
+                line = (f"Created {summary['created']} · "
+                        f"commented {summary['commented']} · "
+                        f"{summary['already_applied']} already applied · "
+                        f"{summary['assigned']} assigned to an owner.")
+                if summary["repeated"]:
+                    line += (f" {summary['repeated']} point(s) asked for an effect this "
+                             f"plan had already applied.")
+                st.success(line)
                 st.markdown(f"➡️ [Open the ClickUp board]({summary['list_url']})")
                 if summary["failed"]:
                     st.warning(
