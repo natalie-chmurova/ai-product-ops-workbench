@@ -69,3 +69,13 @@ def test_no_board_rewrites_the_plan(workbench, monkeypatch, tmp_path):
     plan = _plan_after_a_run(workbench, tmp_path)
     assert "Last meeting's task" not in plan
     assert "No board was read" in plan
+
+
+def test_the_plan_counts_the_meeting_decisions_it_shows(workbench, monkeypatch, tmp_path):
+    # One plan, counted once. A meeting decision listed in a section of its own was left
+    # out of the numbers the run reports, so the same run read "ask a human 0" beside a
+    # decision that is waiting for exactly that.
+    monkeypatch.setenv("CLICKUP_LIST_ID", "list1")
+    plan = _plan_after_a_run(workbench, tmp_path)
+    assert "Ship Wednesday" in plan
+    assert "## Ask a human (1)" in plan

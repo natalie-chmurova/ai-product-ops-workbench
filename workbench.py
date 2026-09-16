@@ -33,13 +33,8 @@ from src.artifacts import (
 from src.assignees import roster_line, team_roster
 from src.client import WorkbenchError
 from src.clickup import get_tasks, load_board_fixture
-from src.reconcile import (
-    decisions_markdown,
-    plan_markdown,
-    reconcile,
-    reconcile_decisions,
-    split_by_confidence,
-)
+from src.plan import MEETING_DECISION, build_plan, plan_markdown
+from src.reconcile import reconcile, reconcile_decisions
 from src.extract import extract_context
 from src.render import render_report
 from src.transcribe import is_audio, transcribe_audio
@@ -130,13 +125,21 @@ def run(transcript_path: Path, board_path: Path | None = None) -> None:
         # so reconcile the ClickUp-ready list, not the raw action items. This also puts
         # extracted bugs through the board check, which the action items never did.
         # An empty board costs no model call: every point is new without asking.
-        decisions = reconcile(tasks, board)
-        create, comment, ask = split_by_confidence(decisions)
-        decided = reconcile_decisions(context.get("decisions", []), board)
-        plan = plan_markdown(decisions, board) + "\n" + decisions_markdown(decided, board)
-        _write(OUTPUT_DIR / "board_plan.md", plan)
-        print(f"  create {len(create)} · comment on existing {len(comment)} · ask a human {len(ask)}")
-        print(f"  decisions: {len(decided)} (comment on existing work, never new tasks)")
+        # One plan, built once: the file below and the counts printed after it are the
+        # same value read twice, so they cannot disagree about the same run. A fixture
+        # board is not a tracker list, so a fixture run has no scope to write to.
+        plan = build_plan(
+            reconcile(tasks, board),
+            reconcile_decisions(context.get("decisions", []), board),
+            board,
+            "" if board_path else os.environ.get("CLICKUP_LIST_ID", ""),
+        )
+        _write(OUTPUT_DIR / "board_plan.md", plan_markdown(plan))
+        counts = plan.counts
+        print(f"  create {counts['create']} · comment on existing {counts['comment']}"
+              f" · ask a human {counts['ask']}")
+        print(f"  decisions: {len(plan.from_source(MEETING_DECISION))} "
+              "(comment on existing work, never new tasks)")
     else:
         print("Stage 2.5/3  No board configured — every point counts as new.")
         _write(OUTPUT_DIR / "board_plan.md",

@@ -41,7 +41,6 @@ Writes: evals/effect_results.md, evals/effect_decisions.json
 
 from __future__ import annotations
 
-import copy
 import json
 import sys
 from datetime import date
@@ -56,8 +55,8 @@ load_dotenv(dotenv_path=ROOT / ".env")
 
 from src.clickup import load_board_fixture  # noqa: E402
 from src.idempotency import name_and_body  # noqa: E402
-from src.plan import GATE  # noqa: E402
-from src.reconcile import reconcile, split_by_confidence  # noqa: E402
+from src.plan import GATE, build_plan  # noqa: E402
+from src.reconcile import reconcile  # noqa: E402
 
 EFFECTS = ("create", "comment", "ask", "verify_deadline", "verify_status")
 UNIMPLEMENTED = ("verify_deadline", "verify_status")
@@ -117,35 +116,25 @@ def effects_from(entries: list[dict], decisions: list[dict], threshold: float = 
     Pure and free. The model call is the expensive half of this harness and the gate is
     the cheap one, which is why the raw decisions are kept rather than discarded after
     scoring: asking where the threshold should sit is then a re-read, not another run.
+
+    The plan is what production routes with, so it is what this measures. Building one
+    leaves the saved decisions untouched, which is why the same file can be scored at ten
+    gates in a row. The board is not passed: a plan built for scoring names no rows and
+    is written nowhere — only the routing is being measured here.
     """
-    decisions = copy.deepcopy(decisions)
-    # split_by_confidence stamps "low_confidence" on whatever falls below the gate, so a
-    # replay at a different threshold has to clear the previous pass's stamp first. A
-    # cause a guardrail set — an unreadable reply, a target absent from the board — is a
-    # fact about the reply rather than about the gate, and survives.
-    for d in decisions:
-        if d.get("escalation_cause") == "low_confidence":
-            d["escalation_cause"] = ""
-
-    create, comment, ask = split_by_confidence(decisions, threshold)
-    effect_of = {id(d): "create" for d in create}
-    effect_of.update({id(d): "comment" for d in comment})
-    effect_of.update({id(d): "ask" for d in ask})
-
-    out = []
-    for entry, d in zip(entries, decisions):
-        out.append(
-            {
-                "id": entry["id"],
-                "effect": effect_of[id(d)],
-                "target_id": d.get("target_id", ""),
-                "confidence": d.get("confidence", 0.0),
-                "escalation_cause": d.get("escalation_cause", ""),
-                "decision": d.get("decision", ""),
-                "reason": d.get("reason", ""),
-            }
-        )
-    return out
+    plan = build_plan(decisions, [], [], "", threshold)
+    return [
+        {
+            "id": entry["id"],
+            "effect": effect.kind,
+            "target_id": effect.target_id,
+            "confidence": effect.confidence,
+            "escalation_cause": effect.escalation_cause,
+            "decision": effect.point.get("decision", ""),
+            "reason": effect.reason,
+        }
+        for entry, effect in zip(entries, plan.effects)
+    ]
 
 
 def save_decisions(raw: dict) -> None:
