@@ -14,7 +14,8 @@ import re
 
 import pytest
 
-from src.plan import GATE, ask_label, build_plan, plan_markdown
+from src.plan import (GATE, MEETING_DECISION, MEETING_DECISION_LABEL, TASK, ask_label,
+                      build_plan, plan_markdown)
 
 BOARD = [
     {"id": "86abc", "name": "[Payments] Fix saved cards"},
@@ -110,7 +111,10 @@ def test_an_effect_names_the_row_it_would_land_on():
 def test_an_effect_keeps_the_point_and_says_where_it_came_from():
     point, decision_point = task(), meeting_decision()
     plan = build_plan([point], [decision_point], BOARD, "list1")
-    assert [e.source for e in plan.effects] == ["task", "meeting decision"]
+    # Against the discriminators, not their spelling: what a source is called on screen
+    # is MEETING_DECISION_LABEL, and the tag test below is where that is pinned.
+    assert [e.source for e in plan.effects] == [TASK, MEETING_DECISION]
+    assert MEETING_DECISION != MEETING_DECISION_LABEL
     assert plan.effects[0].point == point and plan.effects[1].point == decision_point
     assert [e.name for e in plan.effects] == [point["name"], decision_point["name"]]
 

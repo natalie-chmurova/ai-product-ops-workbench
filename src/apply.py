@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from .clickup import add_comment, create_context, create_one, list_url
+from .clickup import add_comment, creation_inputs, create_task, list_url
 from .client import WorkbenchError
 from .idempotency import (
     ALREADY_APPLIED,
@@ -93,9 +93,9 @@ def apply_plan(
     when = when or date.today().isoformat()
     # The plan was reconciled against exactly one list, so every create is written there
     # — never to a second, separately-configured backlog list. Discard the backlog id
-    # from create_context; a backlog-destined task still gets its "backlog" tag from
-    # create_one, it just never leaves the list this run belongs to.
-    members, aliases, _backlog_id = create_context()
+    # from creation_inputs; a backlog-destined task still gets its "backlog" tag from
+    # create_task, it just never leaves the list this run belongs to.
+    members, aliases, _backlog_id = creation_inputs()
 
     summary = {
         "created": 0, "commented": 0, ALREADY_APPLIED: 0, REPEATED: 0,
@@ -134,5 +134,5 @@ def _create(effect, scope: str, members: list, aliases: dict) -> tuple:
     On failure the info is the reason, as every other write in this pipeline answers —
     so a caller counting failures never has to know which kind of effect it was reading.
     """
-    res = create_one(effect.point, scope, members, aliases, None)
+    res = create_task(effect.point, scope, members, aliases, None)
     return res["ok"], res if res["ok"] else res["info"]

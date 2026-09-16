@@ -26,7 +26,7 @@ def test_a_created_task_carries_the_payload_clickup_expects(transport):
     transport.answers(MAIN, CREATED)
     task = {"name": "[Dev] New alerting", "description": "Goal:\nalert on CDN errors",
             "priority": 2, "tags": ["ops"]}
-    ok, info = clickup._create_task("main", task, assignee_id="42")
+    ok, info = clickup._post_task("main", task, assignee_id="42")
     assert (ok, info) == (True, "[Dev] New alerting")
     assert transport.calls[0].method == "POST"
     assert transport.calls[0].body == {
@@ -37,7 +37,7 @@ def test_a_created_task_carries_the_payload_clickup_expects(transport):
 def test_a_null_description_is_sent_as_an_empty_one(transport):
     # str(None) is "None": a model's "description": null used to reach ClickUp as that word.
     transport.answers(MAIN, CREATED)
-    ok, _ = clickup._create_task("main", {"name": "[Dev] Null description",
+    ok, _ = clickup._post_task("main", {"name": "[Dev] Null description",
                                           "description": None})
     assert ok
     assert transport.calls[0].body["description"] == ""
@@ -48,7 +48,7 @@ def test_a_rejected_tag_is_retried_without_the_tags(transport):
     # than its labels, so it is offered again without them.
     transport.answers(MAIN, status=400, text="Tag not found")
     transport.answers(MAIN, CREATED)
-    ok, info = clickup._create_task("main", {"name": "x", "tags": ["nope"]})
+    ok, info = clickup._post_task("main", {"name": "x", "tags": ["nope"]})
     assert (ok, info) == (True, "x")
     assert len(transport.calls) == 2
     assert "tags" in transport.calls[0].body and "tags" not in transport.calls[1].body
@@ -57,7 +57,7 @@ def test_a_rejected_tag_is_retried_without_the_tags(transport):
 def test_a_network_error_on_the_tagless_retry_is_a_reason_not_a_raise(transport):
     transport.answers(MAIN, status=400, text="Tag not found")
     transport.drops(MAIN, requests.ConnectionError("Connection reset by peer"))
-    ok, info = clickup._create_task("main", {"name": "x", "tags": ["nope"]})
+    ok, info = clickup._post_task("main", {"name": "x", "tags": ["nope"]})
     assert ok is False
     assert "Connection reset by peer" in info
 
@@ -67,25 +67,25 @@ def test_a_create_that_never_reached_clickup_is_not_retried(transport):
     # task and lost the reply. Offering it again is how one effect becomes two tasks, so
     # the tag-less retry is for a create ClickUp answered and refused, not for silence.
     transport.drops(MAIN, requests.ConnectionError("Connection reset by peer"))
-    ok, info = clickup._create_task("main", {"name": "x", "tags": ["nope"]})
+    ok, info = clickup._post_task("main", {"name": "x", "tags": ["nope"]})
     assert ok is False and "Connection reset by peer" in info
     assert len(transport.calls) == 1
 
 
 def test_a_refused_create_is_a_reason_naming_the_status(transport):
     transport.answers(MAIN, status=500, text="boom")
-    ok, info = clickup._create_task("main", {"name": "x"})
+    ok, info = clickup._post_task("main", {"name": "x"})
     assert ok is False
     assert "500" in info and "boom" in info
 
 
-# --- create_one: the owner, the list, the marker tags ------------------------
+# --- create_task: the owner, the list, the marker tags ------------------------
 
 def test_create_one_routes_a_backlog_bug_and_tags_it(transport):
     transport.answers(BACKLOG, CREATED)
     task = {"name": "x", "owner": "Dana", "type": "bug", "destination": "backlog",
             "tags": ["search"]}
-    res = clickup.create_one(task, "main", [], {"dana": "42"}, "backlog-list")
+    res = clickup.create_task(task, "main", [], {"dana": "42"}, "backlog-list")
     assert transport.calls[0].url == BACKLOG
     assert transport.calls[0].body["assignees"] == [42]
     assert transport.calls[0].body["tags"] == ["search", "bug", "backlog"]
@@ -94,7 +94,7 @@ def test_create_one_routes_a_backlog_bug_and_tags_it(transport):
 
 def test_create_one_without_a_backlog_list_keeps_the_main_list(transport):
     transport.answers(MAIN, CREATED)
-    res = clickup.create_one({"name": "x", "destination": "backlog"}, "main", [], {}, None)
+    res = clickup.create_task({"name": "x", "destination": "backlog"}, "main", [], {}, None)
     assert transport.calls[0].url == MAIN
     assert res["backlog"] is True          # the intent is still reported
     assert res["assigned"] is False
@@ -103,13 +103,13 @@ def test_create_one_without_a_backlog_list_keeps_the_main_list(transport):
 def test_create_one_does_not_mutate_the_caller_task(transport):
     transport.answers(MAIN, CREATED)
     task = {"name": "x", "type": "bug", "tags": []}
-    clickup.create_one(task, "main", [], {}, None)
+    clickup.create_task(task, "main", [], {}, None)
     assert task["tags"] == []
 
 
 def test_create_one_reports_failure(transport):
     transport.answers(MAIN, status=500, text="boom")
-    res = clickup.create_one({"name": "x"}, "main", [], {}, None)
+    res = clickup.create_task({"name": "x"}, "main", [], {}, None)
     assert res["ok"] is False and "500" in res["info"]
     assert res["assigned"] is False and res["backlog"] is False
 
@@ -156,7 +156,7 @@ def test_a_create_that_went_through_is_not_offered_again_over_its_answer(transpo
     # task was created. Reading it as a refusal offers the same task a second time,
     # which is how one effect becomes two tasks on the board.
     transport.answers(MAIN, None, text="OK")
-    ok, info = clickup._create_task("main", {"name": "[Dev] New alerting",
+    ok, info = clickup._post_task("main", {"name": "[Dev] New alerting",
                                              "tags": ["ops"]})
     assert (ok, info) == (True, "[Dev] New alerting")
     assert len(transport.calls) == 1
@@ -165,7 +165,7 @@ def test_a_create_that_went_through_is_not_offered_again_over_its_answer(transpo
 def test_a_create_answered_with_a_list_is_not_offered_again(transport):
     # Same for an answer of the wrong shape: the create succeeded, whatever came back.
     transport.answers(MAIN, [{"id": "86new"}])
-    ok, info = clickup._create_task("main", {"name": "[Dev] New alerting",
+    ok, info = clickup._post_task("main", {"name": "[Dev] New alerting",
                                              "tags": ["ops"]})
     assert (ok, info) == (True, "[Dev] New alerting")
     assert len(transport.calls) == 1

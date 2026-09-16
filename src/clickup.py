@@ -380,7 +380,7 @@ def add_comment(task_id: str, text: str) -> tuple[bool, str]:
     return (True, task_id) if ok else (False, reason)
 
 
-def _create_task(list_id: str, task: dict, assignee_id: str | None = None) -> tuple[bool, str]:
+def _post_task(list_id: str, task: dict, assignee_id: str | None = None) -> tuple[bool, str]:
     """Create one task. Returns (ok, task_name_or_reason)."""
     payload = {
         "name": str(task.get("name", "Untitled task"))[:250],
@@ -418,15 +418,20 @@ def _create_task(list_id: str, task: dict, assignee_id: str | None = None) -> tu
     return (True, tagless["name"]) if ok else (False, reason)
 
 
-def create_context() -> tuple[list[dict], dict[str, str], str | None]:
-    """Members, alias map and backlog list — read once per batch of creates."""
+def creation_inputs() -> tuple[list[dict], dict[str, str], str | None]:
+    """What every create in a batch needs before the first one is written: the workspace's
+    members, the alias map that names them, and the backlog list a defect may be routed to.
+
+    A read, despite the company it keeps: nothing here writes. Read once per batch, so a
+    plan of twenty creates asks the tracker for its people once.
+    """
     # A newly found defect belongs in the backlog, not in the running sprint. With no
     # backlog list configured everything still lands in the main list, tagged with
     # the intended destination, so nothing is silently lost.
     return members_if_readable(), alias_map(), os.environ.get("CLICKUP_BACKLOG_LIST_ID")
 
 
-def create_one(
+def create_task(
     task: dict,
     list_id: str,
     members: list[dict],
@@ -450,7 +455,7 @@ def create_one(
             tags.append(marker)
     task["tags"] = tags
 
-    ok, info = _create_task(target, task, assignee_id)
+    ok, info = _post_task(target, task, assignee_id)
     return {
         "ok": ok,
         "info": info,

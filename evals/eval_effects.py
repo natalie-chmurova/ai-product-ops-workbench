@@ -20,7 +20,7 @@ An `ask` counts as correct only when it came from honest doubt. An escalation ca
 by an unreadable reply or a target absent from the board is a guardrail firing —
 crediting it would report a broken run as a good one.
 
-The raw decisions are kept in `evals/effect_decisions.json`. The model call is the
+The raw matches are kept in `evals/effect_decisions.json`. The model call is the
 expensive half of this harness and the confidence gate is the cheap one, so questions
 about where the gate belongs are answered by re-reading that file rather than by paying
 for another run.
@@ -31,7 +31,7 @@ Usage:
   python evals/eval_effects.py --only ground_truth.json --board evals/board_demo_live_snapshot.json
                                              override the fixture (the clutter measurement)
   python evals/eval_effects.py --dry-run     list what would run, call no API
-  python evals/eval_effects.py --replay      re-score saved decisions, call no API
+  python evals/eval_effects.py --replay      re-score saved matches, call no API
   python evals/eval_effects.py --replay --threshold 0.7
                                              the same decisions at a different gate
   python evals/eval_effects.py --sweep       accuracy across gates 0.50-0.95, call no API
@@ -148,13 +148,13 @@ def save_matches(raw: dict) -> None:
         json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     n = sum(len(v["decisions"]) for v in raw.values())
-    print(f"written: evals/{MATCHES_PATH.name} ({n} raw decisions)")
+    print(f"written: evals/{MATCHES_PATH.name} ({n} raw matches)")
 
 
 def load_matches() -> dict:
     if not MATCHES_PATH.exists():
         raise SystemExit(
-            f"no saved decisions at evals/{MATCHES_PATH.name} — run the eval once "
+            f"no saved matches at evals/{MATCHES_PATH.name} — run the eval once "
             "without --replay/--sweep to populate it"
         )
     return json.loads(MATCHES_PATH.read_text(encoding="utf-8"))
@@ -173,17 +173,17 @@ def score(entries: list[dict], effects: list[dict]) -> dict:
     for entry in entries:
         expected = entry["expected_effect"]
         got = by_id.get(entry["id"], {})
-        chosen = got.get("effect", "")
+        chosen_kind = got.get("effect", "")
         cause = got.get("escalation_cause", "")
         per_effect[expected]["total"] += 1
 
-        if chosen == "ask":
+        if chosen_kind == "ask":
             key = cause or "low_confidence"
             by_cause[key] = by_cause.get(key, 0) + 1
 
         # An escalation caused by a guardrail is the mechanism failing safe, not the
         # agent correctly asking for help. Only honest doubt earns the credit.
-        ok = chosen == expected
+        ok = chosen_kind == expected
         if expected == "ask" and ok and cause not in ("", "low_confidence"):
             ok = False
 
@@ -195,7 +195,7 @@ def score(entries: list[dict], effects: list[dict]) -> dict:
                 {
                     "id": entry["id"],
                     "expected": expected,
-                    "got": chosen or "(nothing)",
+                    "got": chosen_kind or "(nothing)",
                     "cause": cause,
                     "intent": f"{got.get('decision','')} {got.get('target_id','') or 'NONE'}".strip(),
                     "reason": got.get("reason", ""),
@@ -293,7 +293,7 @@ def report(results: list[dict], board_override: str | None) -> str:
 
 
 def sweep_report(sets: list[dict], cache: dict, thresholds: list[float]) -> str:
-    """Effect accuracy as a function of the confidence gate, from saved decisions.
+    """Effect accuracy as a function of the confidence gate, from saved matches.
 
     Costs nothing: every row re-reads the same replies at a different threshold.
     """
@@ -319,12 +319,12 @@ def sweep_report(sets: list[dict], cache: dict, thresholds: list[float]) -> str:
     for t in thresholds:
         cells, correct, total, escalated = [], 0, 0, 0
         for s in sets:
-            chosen = effects_from(s["entries"], cache[s["name"]]["decisions"], t)
-            sc = score(s["entries"], chosen)
+            effects = effects_from(s["entries"], cache[s["name"]]["decisions"], t)
+            sc = score(s["entries"], effects)
             cells.append(f"{sc['effect_correct'] / sc['total']:.0%}" if sc["total"] else "—")
             correct += sc["effect_correct"]
             total += sc["total"]
-            escalated += sum(1 for row in chosen if row["effect"] == "ask")
+            escalated += sum(1 for row in effects if row["effect"] == "ask")
         mark = " ←" if abs(t - GATE) < 1e-9 else ""
         lines.append(
             f"| {t:.2f}{mark} | " + " | ".join(cells) + f" | **{correct / total:.0%}** | {escalated} |"
@@ -383,7 +383,7 @@ def main() -> None:
         missing = [s["name"] for s in sets if s["name"] not in cache]
         if missing:
             raise SystemExit(
-                f"no saved decisions for {', '.join(missing)} — run without "
+                f"no saved matches for {', '.join(missing)} — run without "
                 "--replay/--sweep to populate them"
             )
 
@@ -403,14 +403,14 @@ def main() -> None:
         print(f"\n=== {s['label']} · board {board_ref} ({len(board)} tasks) ===")
         if replay:
             matches = cache[s["name"]]["decisions"]
-            print(f"  replaying {len(matches)} saved decisions at gate {threshold}")
+            print(f"  replaying {len(matches)} saved matches at gate {threshold}")
         else:
             matches = match_raw(s["entries"], board)
         # `decisions` is the saved file's own key, pinned; what it holds is a match.
         raw[s["name"]] = dict(board=board_ref, decisions=matches)
 
-        chosen = effects_from(s["entries"], matches, threshold)
-        sc = score(s["entries"], chosen)
+        effects = effects_from(s["entries"], matches, threshold)
+        sc = score(s["entries"], effects)
         acc = sc["effect_correct"] / sc["total"] if sc["total"] else 0.0
         print(f"  effect accuracy {acc:.0%} ({sc['effect_correct']}/{sc['total']})")
         if sc["by_cause"]:

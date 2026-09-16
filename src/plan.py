@@ -32,18 +32,13 @@ GATE = 0.8
 # already under way and never can, which is the one routing difference between them.
 # These are discriminators: what they are compared against, never what is shown.
 TASK = "task"
-MEETING_DECISION = "meeting decision"
+MEETING_DECISION = "meeting_decision"
 
-# What each source is called on screen. Separate from the discriminator on purpose: the
-# tag used to render the constant itself, so relabelling the display — "team decision",
-# say — would have re-keyed the routing at the same time, and a run's effects would have
-# changed because a word on a page did.
-_SOURCE_LABELS = {TASK: "task", MEETING_DECISION: "meeting decision"}
-
-
-def _source_label(source: str) -> str:
-    """Display text for a source, derived from the discriminator but not it."""
-    return _SOURCE_LABELS.get(source, source)
+# What a meeting decision is called on screen, which is not what the router compares
+# against. The tag used to render the discriminator itself, so relabelling the display —
+# "team decision", say — would have re-keyed the routing at the same time, and a run's
+# effects would have changed because a word on a page did.
+MEETING_DECISION_LABEL = "meeting decision"
 
 
 @dataclass(frozen=True)
@@ -58,7 +53,7 @@ class Effect:
     point: dict
     source: str
     # The effect kind: which of the three things this effect does. Not the point's own
-    # `kind`, which on a meeting decision is what it changed — see `change_kind`.
+    # `kind`, which on a meeting decision is what it changed — see `_change_kind`.
     kind: str              # create | comment | ask
     intent: str            # create | comment | "" (nothing safe to do)
     target_id: str
@@ -224,7 +219,7 @@ def target_label(effect: Effect) -> str:
             else f"`{effect.target_id}`")
 
 
-def change_kind(point: dict) -> str:
+def _change_kind(point: dict) -> str:
     """What a meeting decision changed: its scope, its date, its priority, or other.
 
     The point's own `kind`, which is not an effect kind (`create`/`comment`/`ask`) —
@@ -243,7 +238,7 @@ def _tag(effect: Effect) -> str:
     landing as a comment is a different thing from a task landing as one.
     """
     if effect.source == MEETING_DECISION:
-        return f"`{_source_label(effect.source)} · {change_kind(effect.point)}`"
+        return f"`{MEETING_DECISION_LABEL} · {_change_kind(effect.point)}`"
     bits = [str(effect.point.get(k, "")).lower() for k in ("type", "destination")]
     bits = [b for b in bits if b]
     return f"`{' → '.join(bits)}`" if bits else ""
