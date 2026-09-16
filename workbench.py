@@ -34,7 +34,7 @@ from src.assignees import roster_line
 from src.client import WorkbenchError
 from src.clickup import get_tasks, load_board_fixture, team_roster
 from src.plan import MEETING_DECISION, build_plan, plan_markdown
-from src.reconcile import reconcile, reconcile_decisions
+from src.reconcile import reconcile, reconcile_meeting_decisions
 from src.extract import extract_context
 from src.render import render_report
 from src.transcribe import is_audio, transcribe_audio
@@ -131,7 +131,7 @@ def run(transcript_path: Path, board_path: Path | None = None) -> None:
         # empty or not, is still a board it read.
         plan = build_plan(
             reconcile(tasks, board),
-            reconcile_decisions(context.get("decisions", []), board),
+            reconcile_meeting_decisions(context.get("decisions", []), board),
             board,
             "",
         )

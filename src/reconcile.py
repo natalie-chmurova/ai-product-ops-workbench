@@ -9,6 +9,13 @@ This is the same job the n8n board-sync workflow does, brought into the Python
 pipeline so both paths reason the same way. The prompt lives in
 `prompts/match.md` — one source shared by this module, the n8n Match agent node
 and the decision eval, so the three cannot drift apart.
+
+The answer this module produces is a **match**, in `CONTEXT.md`'s sense: new work,
+or an update to a named board row, with a confidence and a reason. It is not a
+meeting decision (a call a person made) and not a verdict (a call a person makes on
+what the agent asked about). The `DECISION:` line the model writes, and the
+`"decision"` field a match carries, are the wire format — pinned against the n8n
+Parse decision node — not the name of the idea.
 """
 
 from __future__ import annotations
@@ -44,8 +51,8 @@ def board_summary(tasks: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def parse_decision(reply: str, board: list[dict]) -> dict:
-    """Parse the agent's four-line answer, defensively.
+def parse_match(reply: str, board: list[dict]) -> dict:
+    """Parse the agent's four-line answer into one match, defensively.
 
     A malformed reply defaults to NEW with zero confidence rather than raising:
     an unparseable answer is exactly the case a human should look at, not one
@@ -56,7 +63,9 @@ def parse_decision(reply: str, board: list[dict]) -> dict:
     agent reached an answer and doubted it — and counted as the same, a broken run
     scores as a good one.
     """
-    decision = (re.search(r"DECISION:\s*(NEW|UPDATE)", reply, re.I) or [None, "NEW"])[1].upper()
+    # The match's own call, NEW or UPDATE. `DECISION:` is what the model writes and
+    # `"decision"` is what the record carries; both are the format, kept byte for byte.
+    new_or_update = (re.search(r"DECISION:\s*(NEW|UPDATE)", reply, re.I) or [None, "NEW"])[1].upper()
     target = (re.search(r"TASK_ID:\s*([A-Za-z0-9]+)", reply, re.I) or [None, ""])[1]
     raw_conf = (re.search(r"CONFIDENCE:\s*([\d.]+)", reply, re.I) or [None, "0"])[1]
     reason = ((re.search(r"REASON:\s*(.+)", reply, re.I) or [None, ""])[1]).strip()
@@ -72,7 +81,7 @@ def parse_decision(reply: str, board: list[dict]) -> dict:
 
     # An UPDATE that names no real task is not trustworthy — same guardrail the
     # n8n workflow applies, so it drops to a human instead of writing anywhere.
-    if decision == "UPDATE" and not target:
+    if new_or_update == "UPDATE" and not target:
         confidence = 0.0
 
     unparseable = not re.search(r"DECISION:\s*(NEW|UPDATE)", reply, re.I)
@@ -84,7 +93,7 @@ def parse_decision(reply: str, board: list[dict]) -> dict:
     # reads as a good one — so the two failures this function can see are named.
     if unparseable:
         cause = "unreadable"
-    elif decision == "UPDATE" and not target:
+    elif new_or_update == "UPDATE" and not target:
         cause = "phantom_target"
     else:
         cause = ""
@@ -94,13 +103,15 @@ def parse_decision(reply: str, board: list[dict]) -> dict:
     if not reason:
         if unparseable:
             reason = "could not read the agent's answer, so this needs a human"
-        elif decision == "UPDATE" and not target:
+        elif new_or_update == "UPDATE" and not target:
             reason = "matched an existing task that is not on the board"
         else:
             reason = "the agent gave no reason"
 
     return {
-        "decision": decision,
+        # Pinned: the field every stored match record, the decision log and the n8n
+        # Parse decision node spell this way.
+        "decision": new_or_update,
         "target_id": target,
         "confidence": confidence,
         "reason": reason,
@@ -108,65 +119,69 @@ def parse_decision(reply: str, board: list[dict]) -> dict:
     }
 
 
-def reconcile_decisions(decisions: list[dict], board: list[dict]) -> list[dict]:
-    """Match each decision to the work it changes.
+def reconcile_meeting_decisions(meeting_decisions: list[dict],
+                                board: list[dict]) -> list[dict]:
+    """Match each meeting decision to the work it changes.
 
-    A decision is never new work — "ship Wednesday, cut payments" changes an
+    A meeting decision is never new work — "ship Wednesday, cut payments" changes an
     existing commitment. So the only useful outcomes are: comment on the task it
     affects, or ask a human because no task on the board obviously matches.
     Creating something is not on the menu.
     """
     out = []
-    for d in decisions:
+    for meeting_decision in meeting_decisions:
         # A bare string is a meeting decision given as its sentence alone.
-        d = d if isinstance(d, dict) else {"what": str(d)}
-        name, _ = name_and_body(d)  # its sentence, which is also its body
-        affects = d.get("affects", "")
-        kind = d.get("kind", "other")
+        meeting_decision = (meeting_decision if isinstance(meeting_decision, dict)
+                            else {"what": str(meeting_decision)})
+        name, _ = name_and_body(meeting_decision)  # its sentence, also its body
+        affects = meeting_decision.get("affects", "")
 
         if board:
-            decision = decide_one(name, f"This decision changes: {affects}", board)
+            # "This decision changes: ..." is prompt text a model reads, not a name.
+            match = match_one(name, f"This decision changes: {affects}", board)
         else:
-            decision = {"decision": "NEW", "target_id": "", "confidence": 0.0,
-                        "reason": "no board to match the decision against"}
+            match = {"decision": "NEW", "target_id": "", "confidence": 0.0,
+                     "reason": "no board to match the decision against"}
 
-        # NEW is meaningless for a decision: if nothing matched, a human looks at it.
-        effect = "comment" if decision["target_id"] else "ask"
+        # NEW is meaningless here: if nothing matched, a human looks at it.
+        effect = "comment" if match["target_id"] else "ask"
         out.append({
             "name": name,
             "affects": affects,
-            "kind": kind,
+            # The meeting decision's own kind — what it changed — carried through under
+            # the key the extraction writes. Not an effect kind; see `src/plan.py`.
+            "kind": meeting_decision.get("kind", "other"),
             "effect": effect,
-            "target_id": decision["target_id"],
-            "confidence": decision["confidence"],
-            "reason": decision["reason"],
+            "target_id": match["target_id"],
+            "confidence": match["confidence"],
+            "reason": match["reason"],
         })
     return out
 
 
-def decide_one(name: str, detail: str, board: list[dict]) -> dict:
+def match_one(name: str, detail: str, board: list[dict]) -> dict:
     """Ask the agent whether one meeting point is new work or an update."""
     prompt = load_prompt("match").format(
         board=board_summary(board), name=name, detail=detail
     )
     reply = ask("You are a precise board-sync agent.", prompt, max_tokens=400)
-    return parse_decision(reply, board)
+    return parse_match(reply, board)
 
 
 def reconcile(items: list[dict], board: list[dict]) -> list[dict]:
-    """Decide new-vs-update for every extracted item.
+    """Match every extracted item against the board: new work, or an update.
 
-    Returns each item enriched with the decision, so the caller can create,
-    comment, or escalate. With an empty board every item is new by definition —
-    no call is made, and nothing is invented.
+    Returns each item enriched with its match, so the caller can create, comment, or
+    escalate. With an empty board every item is new by definition — no call is made,
+    and nothing is invented.
     """
     out = []
     for item in items:
         name, detail = name_and_body(item)
         if board:
-            decision = decide_one(name, detail, board)
+            match = match_one(name, detail, board)
         else:
-            decision = {
+            match = {
                 "decision": "NEW",
                 "target_id": "",
                 "confidence": 1.0,
@@ -175,5 +190,5 @@ def reconcile(items: list[dict], board: list[dict]) -> list[dict]:
         # normalise the label: stage 1 calls it `what`, tasks call it `name`, and
         # everything downstream (plan, comments, the key) needs one predictable pair,
         # read by the same definition the key reads a point with
-        out.append({**item, **decision, "name": name, "detail": detail})
+        out.append({**item, **match, "name": name, "detail": detail})
     return out

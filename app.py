@@ -32,7 +32,7 @@ from src.client import WorkbenchError
 from src.extract import extract_context
 from src.idempotency import ALREADY_APPLIED, REPEATED
 from src.plan import Plan, ask_label, build_plan, plan_markdown
-from src.reconcile import reconcile, reconcile_decisions
+from src.reconcile import reconcile, reconcile_meeting_decisions
 
 load_dotenv()
 
@@ -391,7 +391,7 @@ with right:
                 # count the same run differently or send what the tab never showed.
                 plan = build_plan(
                     reconcile(tasks, board),
-                    reconcile_decisions(context.get("decisions", []), board),
+                    reconcile_meeting_decisions(context.get("decisions", []), board),
                     board, scope_id,
                     # With no list selected no board was read, which is not the same
                     # fact as a board that was read and found empty.

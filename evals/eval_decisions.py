@@ -10,7 +10,7 @@ Because the decision is categorical, it is scored by exact match against a
 labeled ground truth — no LLM judge needed. Runs N times (the model is
 non-deterministic) and averages.
 
-This harness calls `src.reconcile.decide_one` — the same production match step
+This harness calls `src.reconcile.match_one` — the same production match step
 the pipeline and the n8n Match agent node use — instead of keeping its own copy
 of the board text and the reply parsing. It used to keep a copy, which drifted:
 it was still measuring an agent that had never been told a decision is an
@@ -36,7 +36,7 @@ sys.path.insert(0, str(ROOT))
 
 from dotenv import load_dotenv
 
-from src.reconcile import decide_one  # noqa: E402
+from src.reconcile import match_one  # noqa: E402
 
 GT = json.loads((ROOT / "evals" / "match_ground_truth.json").read_text(encoding="utf-8"))
 
@@ -59,9 +59,11 @@ def main() -> None:
         dec_ok = 0
         tgt_ok = 0
         for p in points:
-            result = decide_one(p["name"], p["detail"], board)
-            decision, target = result["decision"], result["target_id"]
-            d_correct = decision == p["expected_decision"]
+            match = match_one(p["name"], p["detail"], board)
+            # `decision` / `expected_decision` are the match record's and the ground
+            # truth's own field names; both are formats, kept as they are spelled.
+            new_or_update, target = match["decision"], match["target_id"]
+            d_correct = new_or_update == p["expected_decision"]
             dec_ok += d_correct
             if p["expected_decision"] == "UPDATE":
                 if d_correct and target == p["expected_target"]:

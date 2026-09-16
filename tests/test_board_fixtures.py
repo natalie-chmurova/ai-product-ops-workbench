@@ -133,27 +133,27 @@ def test_summary_joins_several_assignees():
 
 # --- why an escalation happened -----------------------------------------------
 
-from src.reconcile import parse_decision
+from src.reconcile import parse_match
 
 SMALL_BOARD = [{"id": "86abc", "name": "[Payments] Fix saved cards"}]
 
 
 def test_unreadable_reply_is_named_as_such():
-    d = parse_decision("the model rambled instead of answering", SMALL_BOARD)
+    d = parse_match("the model rambled instead of answering", SMALL_BOARD)
     assert d["escalation_cause"] == "unreadable"
     assert d["confidence"] == 0.0
 
 
 def test_update_naming_a_task_not_on_the_board():
     reply = "DECISION: UPDATE\nTASK_ID: 99zzz\nCONFIDENCE: 0.9\nREASON: same work"
-    d = parse_decision(reply, SMALL_BOARD)
+    d = parse_match(reply, SMALL_BOARD)
     assert d["escalation_cause"] == "phantom_target"
     assert d["confidence"] == 0.0
 
 
 def test_an_honest_answer_has_no_failure_cause():
     reply = "DECISION: UPDATE\nTASK_ID: 86abc\nCONFIDENCE: 0.9\nREASON: same work"
-    assert parse_decision(reply, SMALL_BOARD)["escalation_cause"] == ""
+    assert parse_match(reply, SMALL_BOARD)["escalation_cause"] == ""
 
 
 # --- scoring the effect -------------------------------------------------------

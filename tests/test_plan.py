@@ -30,7 +30,7 @@ def task(**fields) -> dict:
 
 
 def meeting_decision(**fields) -> dict:
-    """A matched meeting decision, as `reconcile_decisions` hands it on."""
+    """A matched meeting decision, as `reconcile_meeting_decisions` hands it on."""
     return {"name": "Ship Wednesday, cut payments", "affects": "the release",
             "kind": "scope_change", "effect": "comment", "target_id": "86abc",
             "confidence": 0.9, "reason": "same release", **fields}

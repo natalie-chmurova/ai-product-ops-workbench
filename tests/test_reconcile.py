@@ -2,9 +2,9 @@
 
 from src.reconcile import (
     board_summary,
-    parse_decision,
+    parse_match,
     reconcile,
-    reconcile_decisions,
+    reconcile_meeting_decisions,
 )
 
 BOARD = [
@@ -22,23 +22,23 @@ def test_board_summary_empty_board():
     assert board_summary([]) == ""
 
 
-def test_parse_decision_update():
+def test_parse_match_update():
     reply = (
         "DECISION: UPDATE\n"
         "TASK_ID: 86abc\n"
         "CONFIDENCE: 0.9\n"
         "REASON: same saved-cards work"
     )
-    d = parse_decision(reply, BOARD)
+    d = parse_match(reply, BOARD)
     assert d["decision"] == "UPDATE"
     assert d["target_id"] == "86abc"
     assert d["confidence"] == 0.9
     assert d["reason"] == "same saved-cards work"
 
 
-def test_parse_decision_new_has_no_target():
+def test_parse_match_new_has_no_target():
     reply = "DECISION: NEW\nTASK_ID: NONE\nCONFIDENCE: 0.8\nREASON: nothing covers it"
-    d = parse_decision(reply, BOARD)
+    d = parse_match(reply, BOARD)
     assert d["decision"] == "NEW"
     assert d["target_id"] == ""
 
@@ -47,26 +47,26 @@ def test_update_pointing_off_board_loses_confidence():
     # the same guardrail the n8n workflow uses: an UPDATE must name a task that
     # actually exists, otherwise it is not trustworthy and goes to a human
     reply = "DECISION: UPDATE\nTASK_ID: 86zzz\nCONFIDENCE: 0.95\nREASON: invented id"
-    d = parse_decision(reply, BOARD)
+    d = parse_match(reply, BOARD)
     assert d["target_id"] == ""
     assert d["confidence"] == 0.0
 
 
 def test_garbage_reply_defaults_to_new_and_zero_confidence():
-    d = parse_decision("the model rambled instead of answering", BOARD)
+    d = parse_match("the model rambled instead of answering", BOARD)
     assert d["decision"] == "NEW"
     assert d["confidence"] == 0.0
 
 
 def test_escalation_always_carries_a_reason():
     # a human seeing "confidence 0.00 —" with no explanation cannot act on it
-    d = parse_decision("the model rambled instead of answering", BOARD)
+    d = parse_match("the model rambled instead of answering", BOARD)
     assert d["reason"], "an escalated item must say why it was escalated"
     assert "could not read" in d["reason"]
 
 
 def test_off_board_update_explains_itself():
-    d = parse_decision("DECISION: UPDATE\nTASK_ID: 86zzz\nCONFIDENCE: 0.9\nREASON:", BOARD)
+    d = parse_match("DECISION: UPDATE\nTASK_ID: 86zzz\nCONFIDENCE: 0.9\nREASON:", BOARD)
     assert "not on the board" in d["reason"]
 
 
@@ -83,14 +83,14 @@ def test_reconcile_normalises_stage1_field_names():
     assert out[0]["decision"] == "NEW"
 
 
-def test_decisions_never_become_new_work():
-    # a decision changes existing work; "create a task" is not a valid outcome
-    out = reconcile_decisions([{"what": "Ship Wednesday, cut payments", "affects": "the release"}], [])
+def test_meeting_decisions_never_become_new_work():
+    # a meeting decision changes existing work; "create a task" is not a valid outcome
+    out = reconcile_meeting_decisions([{"what": "Ship Wednesday, cut payments", "affects": "the release"}], [])
     assert out[0]["effect"] == "ask"          # no board -> a human looks at it
     assert "create" not in str(out).lower() or out[0]["effect"] != "create"
 
 
-def test_reconcile_on_empty_board_makes_no_decision_call():
+def test_reconcile_on_empty_board_makes_no_match_call():
     # nothing to match against means nothing to pay a model for
     out = reconcile([{"what": "anything"}], [])
     assert out[0]["confidence"] == 1.0

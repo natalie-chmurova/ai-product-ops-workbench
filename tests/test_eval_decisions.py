@@ -3,7 +3,7 @@
 `evals/eval_decisions.py` used to keep its own board text and its own reply
 parser, both copied from `src/reconcile.py`; the copy already drifted once
 (its prompt text, fixed in WB-21). This pins the eval to
-`src.reconcile.decide_one` so the two cannot drift apart again: it patches
+`src.reconcile.match_one` so the two cannot drift apart again: it patches
 `ask` where `src/reconcile.py` looks it up, runs the eval's real per-point
 call for every ground-truth point, and checks both what gets sent to the
 model and how a reply is scored.
@@ -57,7 +57,7 @@ def _forbid_real_api(monkeypatch):
     """However the eval reaches for the model, it must not construct a real client.
 
     This is the backstop for the RED run: before the eval is changed to call
-    `src.reconcile.decide_one`, patching that seam alone does not intercept
+    `src.reconcile.match_one`, patching that seam alone does not intercept
     its own private `decide()`, which would otherwise fall through to a real
     Anthropic client.
     """
