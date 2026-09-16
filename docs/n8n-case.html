@@ -236,7 +236,7 @@
   <b>applied effect</b> (a SHA-1 of the normalized comment/task, computed after the agent decides):
   a check node suppresses effects already in a local store, and the key is written <b>only after a
   successful apply</b> — so a failure never permanently silences an effect. The core is a small
-  Python module (<code>src/idempotency.py</code>) with 11 passing tests and a no-API demo that
+  Python module (<code>src/idempotency.py</code>) under test, with a no-API demo that
   proves the invariant: <b>run a fixed set of effects twice → the second run applies 0</b>. The same
   three nodes are mirrored into the n8n workflow (crypto + fs).</p>
   <p><b>Two layers, honestly bounded.</b> The deterministic key catches the <i>verbatim</i> repeat
