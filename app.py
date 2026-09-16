@@ -373,7 +373,7 @@ with right:
             st.session_state["result"] = {
                 "context": context, "tasks": tasks, "sprint": sprint_md, "triage": triage_md,
                 "speakers": speakers_md, "elapsed": elapsed,
-                "board": board, "plan": plan, "board_plan_md": plan_markdown(plan),
+                "plan": plan, "board_plan_md": plan_markdown(plan),
                 "scope_label": scope_label,
             }
             # A fresh plan means fresh choices for the items below the gate.
