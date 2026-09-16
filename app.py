@@ -30,7 +30,8 @@ from src.assignees import roster_line, team_roster
 from src.clickup import get_lists, get_tasks
 from src.client import WorkbenchError
 from src.extract import extract_context
-from src.reconcile import GATE, decisions_markdown, plan_markdown, reconcile, reconcile_decisions
+from src.plan import GATE
+from src.reconcile import decisions_markdown, plan_markdown, reconcile, reconcile_decisions
 
 load_dotenv()
 

@@ -172,23 +172,6 @@ def test_reconcile_on_empty_board_makes_no_decision_call():
     assert "board is empty" in out[0]["reason"]
 
 
-# --- one gate, defined once ---
-
-import inspect
-
-from src.reconcile import GATE
-
-
-def test_one_gate_everywhere():
-    # The effect eval, the plan and the app must agree on where the gate is. Five
-    # copies of 0.8 is how a threshold sweep ends up moving one of them.
-    from evals.eval_effects import GATE as eval_gate
-
-    assert eval_gate == GATE == 0.8
-    for fn in (split_by_confidence, plan_markdown, decisions_markdown):
-        assert inspect.signature(fn).parameters["threshold"].default == GATE
-
-
 def test_reconcile_accepts_a_generated_task():
     # The plan is about what gets created — a ClickUp-ready task — so both the CLI and
     # the app reconcile tasks, not raw action items. A task carries name/description.

@@ -17,11 +17,7 @@ import re
 
 from .client import ask, load_prompt
 from .idempotency import name_and_body
-
-# The confidence gate. One number, imported wherever the gate is applied — the plan,
-# the app, the effect eval. The n8n IF nodes carry a literal 0.8 of their own;
-# n8n/README.md says to keep them equal to this.
-GATE = 0.8
+from .plan import GATE  # noqa: F401  (the gate lives with the routing it governs)
 
 
 def board_summary(tasks: list[dict]) -> str:

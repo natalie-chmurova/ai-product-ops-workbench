@@ -56,7 +56,8 @@ load_dotenv(dotenv_path=ROOT / ".env")
 
 from src.clickup import load_board_fixture  # noqa: E402
 from src.idempotency import name_and_body  # noqa: E402
-from src.reconcile import GATE, reconcile, split_by_confidence  # noqa: E402
+from src.plan import GATE  # noqa: E402
+from src.reconcile import reconcile, split_by_confidence  # noqa: E402
 
 EFFECTS = ("create", "comment", "ask", "verify_deadline", "verify_status")
 UNIMPLEMENTED = ("verify_deadline", "verify_status")
