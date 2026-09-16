@@ -57,6 +57,8 @@ class Effect:
 
     point: dict
     source: str
+    # The effect kind: which of the three things this effect does. Not the point's own
+    # `kind`, which on a meeting decision is what it changed — see `change_kind`.
     kind: str              # create | comment | ask
     intent: str            # create | comment | "" (nothing safe to do)
     target_id: str
@@ -222,15 +224,26 @@ def target_label(effect: Effect) -> str:
             else f"`{effect.target_id}`")
 
 
+def change_kind(point: dict) -> str:
+    """What a meeting decision changed: its scope, its date, its priority, or other.
+
+    The point's own `kind`, which is not an effect kind (`create`/`comment`/`ask`) —
+    and the two used to be read four lines apart, both spelled `kind`, so which one a
+    reader was looking at depended on knowing which dict it came out of. The key is the
+    extraction's output shape, so it stays; the word the code reads it by does not.
+    """
+    return str(point.get("kind") or "other")
+
+
 def _tag(effect: Effect) -> str:
-    """What kind of point this is, in one backticked tag — empty when it says nothing.
+    """Where this point came from and, for a meeting decision, what it changed — in one
+    backticked tag, empty when it says nothing.
 
     A merged list of effects hides where each one came from, and a meeting decision
     landing as a comment is a different thing from a task landing as one.
     """
     if effect.source == MEETING_DECISION:
-        return (f"`{_source_label(effect.source)} · "
-                f"{effect.point.get('kind') or 'other'}`")
+        return f"`{_source_label(effect.source)} · {change_kind(effect.point)}`"
     bits = [str(effect.point.get(k, "")).lower() for k in ("type", "destination")]
     bits = [b for b in bits if b]
     return f"`{' → '.join(bits)}`" if bits else ""

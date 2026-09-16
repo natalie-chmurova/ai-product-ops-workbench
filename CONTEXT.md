@@ -22,6 +22,10 @@ _Avoid_: todo
 A position the team settled on that changes work already under way — its scope, its date or its priority. It never becomes new work of its own.
 _Avoid_: decision (on its own)
 
+**Change kind**:
+Which of those a meeting decision changed: `scope_change`, `date_change`, `priority_change` or `other`. It is a meeting decision's own kind and never an effect kind; the two are read a few lines apart when the plan is rendered.
+_Avoid_: kind (on its own), type
+
 **Task**:
 A tracker-ready ticket drafted from an action item or a bug, with a goal, context, steps and acceptance criteria.
 _Avoid_: ticket, issue
@@ -72,6 +76,10 @@ _Avoid_: board plan (for the value itself)
 **Effect**:
 What happens to one point: create a task, comment on an existing one, or ask a person.
 _Avoid_: action, outcome
+
+**Effect kind**:
+Which of those three an effect is: `create`, `comment` or `ask`. An intent is an effect kind too — the one the agent would have chosen with the gate ignored.
+_Avoid_: kind (on its own), action
 
 **Intent**:
 The effect the agent would take if the gate were ignored.
