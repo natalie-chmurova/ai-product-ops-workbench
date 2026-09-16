@@ -44,7 +44,17 @@ def _trim(text: str) -> str:
 
 def normalize(text: str) -> str:
     """Lowercase, collapse any whitespace run to one space, then trim -- whitespace as the
-    n8n node's JavaScript defines it."""
+    n8n node's JavaScript defines it.
+
+    The whitespace half is pinned against the node; the lowercasing half is Python's own,
+    and the two agree only as far as their Unicode versions do. 95 code points assigned
+    after Python 3.9's Unicode 13 -- U+1C89, U+2C2F, U+A7C0-U+A7DC, Vithkuqi, Garay,
+    U+16EA0-U+16EB8 -- fold in the node and stay put here, so a text holding one of them
+    keys differently on the two sides. That is a known limit, not an oversight: a
+    hand-kept case table would have to track whichever node version the live n8n runs,
+    and meeting text does not contain those scripts. The letters that do agree (Ae, I-dot,
+    Sigma among them) are pinned by tests/test_n8n_parity.py against the node itself.
+    """
     return _trim(_WHITESPACE_RUN.sub(" ", (text or "").lower()))
 
 
