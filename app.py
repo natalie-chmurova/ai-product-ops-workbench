@@ -376,7 +376,7 @@ with right:
             st.session_state["result"] = {
                 "context": context, "tasks": tasks, "sprint": sprint_md, "triage": triage_md,
                 "speakers": speakers_md, "elapsed": elapsed,
-                "plan": plan, "board_plan_md": plan_markdown(plan),
+                "plan": plan,
                 "scope_label": scope_label,
             }
             # A fresh plan means fresh choices for the items below the gate.
@@ -398,8 +398,12 @@ with right:
         with tab_tasks:
             render_tasks(result["tasks"])
         with tab_plan:
-            # older results in session_state predate the plan
-            st.markdown(result.get("board_plan_md") or "_Re-run to reconcile against the board._")
+            # Rendered here from the plan rather than stored beside it: a value and its
+            # rendering kept side by side are two things to keep in step. An older
+            # result in session_state predates the plan.
+            plan = result.get("plan")
+            st.markdown(plan_markdown(plan) if isinstance(plan, Plan)
+                        else "_Re-run to reconcile against the board._")
         with tab_sprint:
             st.markdown(result["sprint"])
         with tab_triage:
