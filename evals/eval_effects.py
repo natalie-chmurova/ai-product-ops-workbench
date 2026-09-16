@@ -55,6 +55,7 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=ROOT / ".env")
 
 from src.clickup import load_board_fixture  # noqa: E402
+from src.idempotency import name_and_body  # noqa: E402
 from src.reconcile import GATE, reconcile, split_by_confidence  # noqa: E402
 
 EFFECTS = ("create", "comment", "ask", "verify_deadline", "verify_status")
@@ -103,7 +104,9 @@ def load_sets(only: str | None = None) -> list[dict]:
 
 def decide_raw(entries: list[dict], board: list[dict]) -> list[dict]:
     """Route every point through the real reconciler. One model call per point."""
-    points = [{"what": e["name"], "context": e["detail"]} for e in entries]
+    # An entry is read with the same definition production reads a point with, so the
+    # text this harness measures on is the text the pipeline would key on.
+    points = [{"what": n, "context": b} for n, b in map(name_and_body, entries)]
     return reconcile(points, board)
 
 
