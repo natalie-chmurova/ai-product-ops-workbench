@@ -6,8 +6,6 @@ environment fallback, because a plan applied to a board it never saw is how dupl
 are made.
 """
 
-from pathlib import Path
-
 import pytest
 
 from src import apply
