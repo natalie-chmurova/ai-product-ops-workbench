@@ -12,11 +12,9 @@ def workbench(monkeypatch, tmp_path):
     """workbench.run with every model call and board read stubbed, writing under tmp_path.
 
     workbench.py loads .env when it is imported; this test must not see real keys, so
-    that call is disabled before the first import. A request that still reaches for the
-    network fails the test instead of leaving the machine.
+    that call is disabled before the first import.
     """
     import dotenv
-    import requests
 
     monkeypatch.setattr(dotenv, "load_dotenv", lambda *a, **k: False)
     import workbench as wb
@@ -24,8 +22,8 @@ def workbench(monkeypatch, tmp_path):
     def no_network(*a, **k):
         raise AssertionError("the CLI test reached for the network")
 
-    monkeypatch.setattr(requests, "get", no_network)
-    monkeypatch.setattr(requests, "post", no_network)
+    # HTTP is refused for the whole suite by the autouse fixture in conftest, at the
+    # transport itself; only the model call is stubbed here.
     monkeypatch.setattr("src.reconcile.ask", no_network)
     monkeypatch.setattr(wb, "OUTPUT_DIR", tmp_path / "outputs")
     monkeypatch.setattr(wb, "get_tasks", lambda: [])

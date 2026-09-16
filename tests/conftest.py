@@ -46,11 +46,14 @@ class _Answer:
         self.text = text or ("" if body is None else json.dumps(body))
 
     def json(self):
+        # A copy, as a real transport gives: it parses the bytes afresh for every
+        # answer, so a module that wrote into what it read would be caught here rather
+        # than quietly editing the test's own fixture.
         if self._body is None:
             # What requests itself raises from .json() for a body that is not JSON. It
             # is a ValueError, which is what the module catches.
             raise requests.exceptions.JSONDecodeError("Expecting value", self.text or "", 0)
-        return self._body
+        return copy.deepcopy(self._body)
 
 
 class Transport:
@@ -63,15 +66,23 @@ class Transport:
         # hang issues real requests the day the fake is not in place. Bound it here, once.
         self.max_calls = 100
 
-    def answers(self, url: str, body=None, *, status: int = 200, text: str = "") -> "Transport":
+    def answers(self, url: str, body=None, *, status: int = 200, text: str = "",
+                method: str | None = None) -> "Transport":
         """ClickUp answers `url` with `status` and `body`. No body means the answer is
-        not JSON at all — an HTML error page from a proxy, say."""
-        self._routes.setdefault(url, []).append(_Answer(status, body, text))
+        not JSON at all — an HTML error page from a proxy, say.
+
+        `method` narrows the route to one verb. One URL in this module is read and
+        written — `/list/<id>/task` is the board on GET and a new task on POST — so an
+        answer meant for one of them can be taken by the other unless the test says so.
+        """
+        self._routes.setdefault((method, url), []).append(_Answer(status, body, text))
         return self
 
-    def drops(self, url: str, error: Exception | None = None) -> "Transport":
+    def drops(self, url: str, error: Exception | None = None,
+              method: str | None = None) -> "Transport":
         """The request to `url` never gets an answer."""
-        self._routes.setdefault(url, []).append(error or requests.ConnectionError("down"))
+        self._routes.setdefault((method, url), []).append(
+            error or requests.ConnectionError("down"))
         return self
 
     @property
@@ -83,7 +94,9 @@ class Transport:
         if len(self.calls) > self.max_calls:
             raise AssertionError(
                 f"the module made more than {self.max_calls} requests without stopping")
-        queue = self._routes.get(url)
+        # The verb first, so a route for one of them is not taken by the other; then
+        # the route a test left open to any verb.
+        queue = self._routes.get((method, url)) or self._routes.get((None, url))
         if not queue:
             raise AssertionError(f"the test routed no answer for {method} {url}")
         answer = queue.pop(0) if len(queue) > 1 else queue[0]
