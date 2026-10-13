@@ -87,7 +87,8 @@ brew install ffmpeg            # mlx-whisper decodes audio with it
 ```
 
 Without them, transcripts work as before and an audio file gets a message saying what
-to install. A full run over the demo transcript costs a few cents.
+to install. A full run over the demo transcript takes under two minutes and costs a few
+cents.
 
 ## Project layout
 

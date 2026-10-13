@@ -2,7 +2,7 @@
 
 **One-liner:** I built a tool that turns a raw product-meeting transcript into
 ClickUp-ready tasks, a stakeholder sprint summary, and a bug triage table — in one
-command, in seconds.
+command, in under two minutes.
 
 ---
 
@@ -58,11 +58,13 @@ On a synthetic 35-minute product sync for a fictional marketplace app, one run p
   (a blocking vendor dependency and thin Android test coverage).
 - **A bug triage table** with severities, P0–P3 priorities, and concrete next actions.
 
-What would take a person a careful hour took the tool a few seconds and a few cents.
+What would take a person a careful hour takes the tool under two minutes and a few cents
+(measured on 13 October 2026: 104 seconds for the full run on this transcript — all four
+documents and the report — with each document written by its own model call).
 
 ## Business value
 
-- **Meeting-to-task time: from ~an hour to under a minute.** The tedious part of product
+- **Meeting-to-task time: from ~an hour to under two minutes.** The tedious part of product
   ops becomes instant, so it actually gets done — every time, consistently.
 - **Nothing falls through the cracks.** Decisions, owners, and bugs are captured
   structurally instead of living in someone's memory or a forgotten notes doc.
