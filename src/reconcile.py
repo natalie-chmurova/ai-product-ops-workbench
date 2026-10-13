@@ -17,6 +17,11 @@ import re
 
 from .client import ask, load_prompt
 
+# The confidence gate. One number, imported wherever the gate is applied — the plan,
+# the app, the effect eval. The n8n IF nodes carry a literal 0.8 of their own;
+# n8n/README.md says to keep them equal to this.
+GATE = 0.8
+
 
 def board_summary(tasks: list[dict]) -> str:
     """The board as the agent sees it: id, name, and whatever else the task carries.
@@ -141,7 +146,13 @@ def reconcile_decisions(decisions: list[dict], board: list[dict]) -> list[dict]:
     return out
 
 
-def decisions_markdown(decisions: list[dict], board: list[dict], threshold: float = 0.8) -> str:
+def target_label(target_id: str, board: list[dict]) -> str:
+    """The task a comment would land on, as the person checking it needs it: name and id."""
+    name = next((t.get("name", "") for t in board if t.get("id") == target_id), "")
+    return f"`{name}` (`{target_id}`)" if name else f"`{target_id}`"
+
+
+def decisions_markdown(decisions: list[dict], board: list[dict], threshold: float = GATE) -> str:
     """The decisions section of the board plan."""
     names = {t["id"]: t.get("name", "") for t in board}
     lines = [f"## Decisions ({len(decisions)})", ""]
@@ -156,8 +167,11 @@ def decisions_markdown(decisions: list[dict], board: list[dict], threshold: floa
                 f"- **{d['name']}** `{d.get('kind','other')}` → comment on `{target}` — {d.get('reason','')}"
             )
         else:
+            # The person asked is checking the match itself, so show where it would land.
+            proposed = (f", proposed target {target_label(d['target_id'], board)}"
+                        if d.get("target_id") else "")
             lines.append(
-                f"- **{d['name']}** `{d.get('kind','other')}` → ask a human "
+                f"- **{d['name']}** `{d.get('kind','other')}` → ask a human{proposed} "
                 f"(confidence {d.get('confidence',0):.2f}) — {d.get('reason','')}"
             )
     lines.append("")
@@ -171,7 +185,7 @@ def _kind(d: dict) -> str:
     return f"`{' → '.join(bits)}` " if bits else ""
 
 
-def split_by_confidence(decisions: list[dict], threshold: float = 0.8) -> tuple:
+def split_by_confidence(decisions: list[dict], threshold: float = GATE) -> tuple:
     """Route decisions into (create, comment, ask_a_human).
 
     The same confidence gate the n8n workflow uses: confident calls are applied,
@@ -192,7 +206,7 @@ def split_by_confidence(decisions: list[dict], threshold: float = 0.8) -> tuple:
     return create, comment, ask
 
 
-def plan_markdown(decisions: list[dict], board: list[dict], threshold: float = 0.8) -> str:
+def plan_markdown(decisions: list[dict], board: list[dict], threshold: float = GATE) -> str:
     """What the run intends to do to the board, before it does any of it."""
     names = {t["id"]: t.get("name", "") for t in board}
     create, comment, ask = split_by_confidence(decisions, threshold)
@@ -220,8 +234,13 @@ def plan_markdown(decisions: list[dict], board: list[dict], threshold: float = 0
     for d in ask:
         cause = d.get("escalation_cause", "")
         tag = f" `{cause}`" if cause and cause != "low_confidence" else ""
+        # A doubtful comment is shown with the task it would land on: that match is what
+        # the person is asked to check. A doubtful create lands on no task.
+        proposed = (f" → proposed target {target_label(d['target_id'], board)}"
+                    if d.get("decision") == "UPDATE" and d.get("target_id") else "")
         lines.append(
-            f"- **{d.get('name','')}**{tag} (confidence {d.get('confidence',0):.2f}) — {d.get('reason','')}"
+            f"- **{d.get('name','')}**{tag}{proposed} (confidence {d.get('confidence',0):.2f})"
+            f" — {d.get('reason','')}"
         )
     if not ask:
         lines.append("- nothing")

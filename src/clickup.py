@@ -18,6 +18,11 @@ from .client import WorkbenchError
 
 API = "https://api.clickup.com/api/v2"
 
+# One model call is made per meeting item, and every one of those calls carries the
+# whole board. Cost grows as items x board size, so a board this large stops the
+# read instead of quietly running up a bill.
+MAX_BOARD = 200
+
 
 def _token() -> str:
     token = os.environ.get("CLICKUP_API_TOKEN")
@@ -39,53 +44,115 @@ def list_url(list_id: str, team_id: str | None = None) -> str:
 
 
 def get_lists() -> list[dict]:
-    """Return the user's lists as [{id, name, space}] for a picker."""
+    """Return the workspace's lists as [{id, name, space}] for the picker.
+
+    The same two absences as get_tasks(): no CLICKUP_TEAM_ID -> [] (nothing to list);
+    configured but failing -> WorkbenchError, from whichever request failed. A picker
+    that reads as empty because a token expired offers no board, and a run without one
+    calls every meeting point new.
+    """
     team_id = os.environ.get("CLICKUP_TEAM_ID")
     if not team_id:
         return []
     out: list[dict] = []
-    spaces = requests.get(f"{API}/team/{team_id}/space", headers=_headers(), timeout=20)
-    for space in spaces.json().get("spaces", []):
+    for space in _workspace_read(f"{API}/team/{team_id}/space", "spaces").get("spaces", []):
         sid, sname = space["id"], space["name"]
-        r = requests.get(f"{API}/space/{sid}/list", headers=_headers(), timeout=20)
-        for lst in r.json().get("lists", []):
+        for lst in _workspace_read(f"{API}/space/{sid}/list", "lists").get("lists", []):
             out.append({"id": lst["id"], "name": lst["name"], "space": sname})
-        folders = requests.get(f"{API}/space/{sid}/folder", headers=_headers(), timeout=20)
-        for folder in folders.json().get("folders", []):
-            fr = requests.get(f"{API}/folder/{folder['id']}/list", headers=_headers(), timeout=20)
-            for lst in fr.json().get("lists", []):
+        for folder in _workspace_read(f"{API}/space/{sid}/folder", "folders").get("folders", []):
+            folder_lists = _workspace_read(f"{API}/folder/{folder['id']}/list", "lists")
+            for lst in folder_lists.get("lists", []):
                 out.append({"id": lst["id"], "name": f"{folder['name']} / {lst['name']}", "space": sname})
     return out
+
+
+def _workspace_read(url: str, what: str) -> dict:
+    """One GET for the list picker. Any failure raises, saying what failed and what to check."""
+    headers = _headers()
+    try:
+        r = requests.get(url, headers=headers, timeout=20)
+    except requests.RequestException as exc:
+        raise WorkbenchError(
+            f"Could not reach ClickUp to read the workspace's {what}: {exc}\n"
+            "  Check your network connection and try again."
+        ) from exc
+    hint = "  Check CLICKUP_API_TOKEN and CLICKUP_TEAM_ID in your .env."
+    if not 200 <= r.status_code < 300:
+        raise WorkbenchError(
+            f"Could not read the ClickUp workspace's {what} (HTTP {r.status_code}): "
+            f"{r.text[:120]}\n{hint}"
+        )
+    try:
+        return r.json()
+    except ValueError as exc:  # requests' JSONDecodeError is a ValueError
+        raise WorkbenchError(
+            f"ClickUp sent the workspace's {what} as something other than JSON "
+            f"(HTTP {r.status_code}): {r.text[:120]}\n{hint}"
+        ) from exc
 
 
 def get_tasks(list_id: str | None = None, include_closed: bool = False) -> list[dict]:
     """Read the board: open tasks in a list, as [{id, name, status, assignees, due_date}].
 
-    Until this existed the pipeline could only write. Without reading the board
-    first, every meeting point looks like new work — which is how a decision
-    turns into a task and work already in progress turns into a duplicate.
-    Returns [] rather than raising when nothing is configured, so callers can
-    degrade to board-blind behaviour instead of failing.
+    Two different absences, kept apart on purpose:
+    - no list id configured -> [] — board-blind mode, and the callers say so out loud;
+    - configured but failing -> WorkbenchError. A board that reads as empty because a
+      token expired would turn every meeting point into new work, silently, which is
+      the exact failure the whole reconcile stage exists to prevent.
+
+    ClickUp hands tasks over a page at a time; every page is read.
     """
     list_id = list_id or os.environ.get("CLICKUP_LIST_ID")
     if not list_id:
         return []
-    params = "include_closed=true" if include_closed else "include_closed=false"
-    r = requests.get(f"{API}/list/{list_id}/task?{params}", headers=_headers(), timeout=20)
-    if r.status_code != 200:
-        return []
-    out = []
-    for t in r.json().get("tasks", []):
-        out.append(
-            {
-                "id": t.get("id", ""),
-                "name": t.get("name", ""),
-                "status": (t.get("status") or {}).get("status", ""),
-                "assignees": [a.get("username", "") for a in t.get("assignees", [])],
-                "due_date": _iso_date(t.get("due_date")),
-            }
-        )
+    out: list[dict] = []
+    page = 0
+    while True:
+        try:
+            r = requests.get(
+                f"{API}/list/{list_id}/task",
+                params={"include_closed": "true" if include_closed else "false", "page": page},
+                headers=_headers(),
+                timeout=20,
+            )
+        except requests.RequestException as exc:
+            raise WorkbenchError(f"Could not reach ClickUp to read the board: {exc}") from exc
+        if r.status_code != 200:
+            raise WorkbenchError(
+                f"Could not read the ClickUp board (HTTP {r.status_code}): {r.text[:120]}\n"
+                "  Check CLICKUP_API_TOKEN and CLICKUP_LIST_ID in your .env."
+            )
+        data = r.json()
+        tasks = data.get("tasks", [])
+        out.extend(_task_row(t) for t in tasks)
+        # Checked here, inside the loop, right after each page is added — not after
+        # the loop breaks. A page sequence that never reports last_page (or keeps
+        # repeating the same non-empty page) never breaks the loop on its own, so
+        # this is what actually bounds it. Once we're over the ceiling the true
+        # total can only be larger, so stopping now is strictly safer than reading
+        # on to find an exact count.
+        if len(out) > MAX_BOARD:
+            raise WorkbenchError(
+                f"The board has at least {len(out)} open tasks; the ceiling is {MAX_BOARD}. "
+                "Every meeting item is matched against the whole board in its own model call, "
+                "so this run would be slow and expensive. Narrow the list, or raise MAX_BOARD "
+                "in src/clickup.py once you have measured what it costs."
+            )
+        if data.get("last_page", True) or not tasks:
+            break
+        page += 1
     return out
+
+
+def _task_row(t: dict) -> dict:
+    """One ClickUp task -> the board row every consumer expects."""
+    return {
+        "id": t.get("id", ""),
+        "name": t.get("name", ""),
+        "status": (t.get("status") or {}).get("status", ""),
+        "assignees": [a.get("username", "") for a in t.get("assignees", [])],
+        "due_date": _iso_date(t.get("due_date")),
+    }
 
 
 def _iso_date(raw) -> str:
@@ -139,12 +206,17 @@ def load_board_fixture(path) -> list[dict]:
 
 def add_comment(task_id: str, text: str) -> tuple[bool, str]:
     """Comment on an existing task — the effect that replaces creating a duplicate."""
-    r = requests.post(
-        f"{API}/task/{task_id}/comment",
-        headers=_headers(),
-        json={"comment_text": text, "notify_all": False},
-        timeout=20,
-    )
+    try:
+        r = requests.post(
+            f"{API}/task/{task_id}/comment",
+            headers=_headers(),
+            json={"comment_text": text, "notify_all": False},
+            timeout=20,
+        )
+    except requests.RequestException as exc:
+        # A dropped request is a failed effect like a rejected one: reported, keyless,
+        # free to be retried — not a traceback that loses the rest of the run's summary.
+        return False, f"network error: {exc}"
     if r.status_code in (200, 201):
         return True, task_id
     return False, f"HTTP {r.status_code}: {r.text[:120]}"
@@ -154,7 +226,8 @@ def _create_task(list_id: str, task: dict, assignee_id: str | None = None) -> tu
     """Create one task. Returns (ok, task_name_or_error)."""
     payload = {
         "name": str(task.get("name", "Untitled task"))[:250],
-        "description": str(task.get("description", "")),
+        # A null description is no description, not the word "None".
+        "description": str(task.get("description") or ""),
     }
     priority = task.get("priority")
     if priority in (1, 2, 3, 4):
@@ -177,68 +250,61 @@ def _create_task(list_id: str, task: dict, assignee_id: str | None = None) -> tu
     # Tags that don't exist in the space can cause a rejection — retry without them.
     if tags:
         payload.pop("tags", None)
-        retry = requests.post(
-            f"{API}/list/{list_id}/task", headers=_headers(), json=payload, timeout=30
-        )
+        try:
+            retry = requests.post(
+                f"{API}/list/{list_id}/task", headers=_headers(), json=payload, timeout=30
+            )
+        except requests.RequestException as exc:
+            return False, f"network error: {exc}"
         if retry.status_code == 200:
             return True, payload["name"]
     return False, f"{r.status_code}: {r.text[:120]}"
 
 
-def push_tasks(tasks: list, list_id: str | None = None) -> dict:
-    """Create every task in the target list. Returns a summary dict."""
-    list_id = list_id or os.environ.get("CLICKUP_LIST_ID")
-    if not list_id:
-        raise WorkbenchError(
-            "No target list. Set CLICKUP_LIST_ID in your .env or pass a list_id."
-        )
-    if not tasks:
-        raise WorkbenchError("There are no tasks to send. Generate artifacts first.")
-
-    # Resolve owners to real assignees once (members + alias map fetched up front).
-    from .assignees import alias_map, get_members, resolve_owner
+def push_context() -> tuple[list[dict], dict[str, str], str | None]:
+    """Members, alias map and backlog list — fetched once per batch of writes."""
+    from .assignees import alias_map, get_members
 
     try:
         members = get_members()
     except Exception:
         members = []
-    aliases = alias_map()
+    # A newly found defect belongs in the backlog, not in the running sprint. With no
+    # backlog list configured everything still lands in the main list, tagged with
+    # the intended destination, so nothing is silently lost.
+    return members, alias_map(), os.environ.get("CLICKUP_BACKLOG_LIST_ID")
 
-    # A newly found defect belongs in the backlog, not in the running sprint.
-    # If no backlog list is configured, everything still lands in the main list —
-    # but the intended destination is tagged, so nothing is silently lost.
-    backlog_id = os.environ.get("CLICKUP_BACKLOG_LIST_ID")
 
-    created, assigned, to_backlog, failures = 0, 0, 0, []
-    for task in tasks:
-        assignee_id = resolve_owner(task.get("owner"), members, aliases)
-        wants_backlog = str(task.get("destination", "")).lower() == "backlog"
-        target = backlog_id if (wants_backlog and backlog_id) else list_id
+def push_one(
+    task: dict,
+    list_id: str,
+    members: list[dict],
+    aliases: dict[str, str],
+    backlog_id: str | None,
+) -> dict:
+    """Create one task: resolve the owner, route to the backlog, tag type/destination.
 
-        task = dict(task)
-        tags = [t for t in task.get("tags", []) if t]
-        for marker in (task.get("type"), task.get("destination")):
-            marker = str(marker or "").lower()
-            if marker in ("bug", "backlog") and marker not in tags:
-                tags.append(marker)
-        task["tags"] = tags
+    Returns {ok, info, assigned, backlog}. One task at a time so a caller can record
+    exactly which effect succeeded — the idempotency key is committed per effect.
+    """
+    from .assignees import resolve_owner
 
-        ok, info = _create_task(target, task, assignee_id)
-        if ok:
-            created += 1
-            if assignee_id:
-                assigned += 1
-            if wants_backlog:
-                to_backlog += 1
-        else:
-            failures.append(info)
+    assignee_id = resolve_owner(task.get("owner"), members, aliases)
+    wants_backlog = str(task.get("destination", "")).lower() == "backlog"
+    target = backlog_id if (wants_backlog and backlog_id) else list_id
 
+    task = dict(task)
+    tags = [t for t in task.get("tags", []) if t]
+    for marker in (task.get("type"), task.get("destination")):
+        marker = str(marker or "").lower()
+        if marker in ("bug", "backlog") and marker not in tags:
+            tags.append(marker)
+    task["tags"] = tags
+
+    ok, info = _create_task(target, task, assignee_id)
     return {
-        "created": created,
-        "assigned": assigned,
-        "backlog": to_backlog,
-        "backlog_list_configured": bool(backlog_id),
-        "failed": failures,
-        "total": len(tasks),
-        "list_url": list_url(list_id),
+        "ok": ok,
+        "info": info,
+        "assigned": bool(assignee_id) and ok,
+        "backlog": wants_backlog and ok,
     }
