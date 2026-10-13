@@ -1,5 +1,8 @@
-anthropic>=0.40.0
-python-dotenv>=1.0.0
-markdown>=3.5
-streamlit>=1.30
-requests>=2.28
+# Python 3.9 or newer. Tested on 3.9 (anthropic 0.125, streamlit 1.50) and on 3.11
+# with the newest releases (anthropic 1.13, streamlit 1.65); the upper bounds stop a
+# future major release arriving untested.
+anthropic>=0.40.0,<2
+python-dotenv>=1.0.0,<2
+markdown>=3.5,<4
+streamlit>=1.30,<2
+requests>=2.28,<3

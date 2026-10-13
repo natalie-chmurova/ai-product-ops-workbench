@@ -54,6 +54,9 @@ unassigned fallback.
 
 ## Run it
 
+You need Python 3.9 or newer (tested on 3.9 and 3.11) and an
+[Anthropic API key](https://console.anthropic.com). ClickUp is optional.
+
 **Web app (point-and-click):**
 
 ```bash
@@ -76,7 +79,15 @@ open outputs/report.html      # macOS ("xdg-open" on Linux)
 
 Pass an audio/video file and it is transcribed locally first (mlx-whisper — nothing
 leaves the machine, no per-minute API cost), then run through the same pipeline.
-A full run over the demo transcript costs a few cents.
+Audio is an optional install and works on Apple Silicon Macs only:
+
+```bash
+pip install -r requirements-audio.txt
+brew install ffmpeg            # mlx-whisper decodes audio with it
+```
+
+Without them, transcripts work as before and an audio file gets a message saying what
+to install. A full run over the demo transcript costs a few cents.
 
 ## Project layout
 
