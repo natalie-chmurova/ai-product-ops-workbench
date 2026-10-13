@@ -1,0 +1,5 @@
+# Optional: transcribe audio recordings locally instead of pasting a transcript.
+# mlx-whisper runs on Apple Silicon Macs only, and needs the ffmpeg command
+# (brew install ffmpeg). The text pipeline needs neither.
+-r requirements.txt
+mlx-whisper>=0.4
