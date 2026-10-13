@@ -31,7 +31,7 @@ GT = json.loads((ROOT / "evals" / "match_ground_truth.json").read_text(encoding=
 MATCH_PROMPT = (ROOT / "prompts" / "match.md").read_text(encoding="utf-8")
 
 SYSTEM = "You are a precise board-sync agent."
-MAX_TOKENS = 400
+MAX_TOKENS = 4000  # the match call's ceiling: room for thinking as well as the answer
 
 # The board text the deleted BOARD_TEXT built, written out literally rather than
 # produced by calling src.reconcile.board_summary — otherwise this test would only

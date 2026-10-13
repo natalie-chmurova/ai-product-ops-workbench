@@ -164,7 +164,9 @@ def match_one(name: str, detail: str, board: list[dict]) -> dict:
     prompt = load_prompt("match").format(
         board=board_summary(board), name=name, detail=detail
     )
-    reply = ask("You are a precise board-sync agent.", prompt, max_tokens=400)
+    # Room for the model's thinking as well as the four-line answer: the two share this
+    # ceiling, and at 400 the thinking sometimes spent it before DECISION: was written.
+    reply = ask("You are a precise board-sync agent.", prompt, max_tokens=4000)
     return parse_match(reply, board)
 
 

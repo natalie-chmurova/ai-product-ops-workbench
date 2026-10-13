@@ -65,8 +65,22 @@ def _ask_raw(system_prompt: str, user_content: str, max_tokens: int) -> tuple[st
 
 
 def ask(system_prompt: str, user_content: str, max_tokens: int = 4000) -> str:
-    """Send one request to Claude and return the plain text reply."""
-    text, _ = _ask_raw(system_prompt, user_content, max_tokens)
+    """Send one request to Claude and return the plain text reply — all of it.
+
+    The model thinks before it answers, and the thinking is spent from the same
+    `max_tokens` as the reply, so a ceiling sized for the reply alone is sometimes used up
+    before the reply is written. A reply cut off by its ceiling is asked for once more with
+    room to finish; one still cut off at TOKEN_CEILING raises, because half a sprint
+    summary shown as the whole of it is worse than an error.
+    """
+    text, stop_reason = _ask_raw(system_prompt, user_content, max_tokens)
+    if stop_reason == "max_tokens" and max_tokens < TOKEN_CEILING:
+        text, stop_reason = _ask_raw(system_prompt, user_content, TOKEN_CEILING)
+    if stop_reason == "max_tokens":
+        raise WorkbenchError(
+            f"Claude's reply was cut off at {TOKEN_CEILING} tokens, so it is incomplete. "
+            "This is usually temporary — please run again."
+        )
     return text
 
 
