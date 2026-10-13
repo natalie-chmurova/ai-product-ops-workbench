@@ -133,41 +133,27 @@ def test_summary_joins_several_assignees():
 
 # --- why an escalation happened -----------------------------------------------
 
-from src.reconcile import parse_decision, split_by_confidence
+from src.reconcile import parse_match
 
 SMALL_BOARD = [{"id": "86abc", "name": "[Payments] Fix saved cards"}]
 
 
 def test_unreadable_reply_is_named_as_such():
-    d = parse_decision("the model rambled instead of answering", SMALL_BOARD)
+    d = parse_match("the model rambled instead of answering", SMALL_BOARD)
     assert d["escalation_cause"] == "unreadable"
     assert d["confidence"] == 0.0
 
 
 def test_update_naming_a_task_not_on_the_board():
     reply = "DECISION: UPDATE\nTASK_ID: 99zzz\nCONFIDENCE: 0.9\nREASON: same work"
-    d = parse_decision(reply, SMALL_BOARD)
+    d = parse_match(reply, SMALL_BOARD)
     assert d["escalation_cause"] == "phantom_target"
     assert d["confidence"] == 0.0
 
 
 def test_an_honest_answer_has_no_failure_cause():
     reply = "DECISION: UPDATE\nTASK_ID: 86abc\nCONFIDENCE: 0.9\nREASON: same work"
-    assert parse_decision(reply, SMALL_BOARD)["escalation_cause"] == ""
-
-
-def test_the_gate_labels_honest_doubt():
-    doubtful = {"name": "x", "decision": "NEW", "target_id": "", "confidence": 0.5, "escalation_cause": ""}
-    broken = {"name": "y", "decision": "UPDATE", "target_id": "", "confidence": 0.0, "escalation_cause": "unreadable"}
-    _, _, ask = split_by_confidence([doubtful, broken])
-    assert [d["escalation_cause"] for d in ask] == ["low_confidence", "unreadable"]
-
-
-def test_the_gate_does_not_relabel_a_confident_decision():
-    confident = {"name": "z", "decision": "NEW", "target_id": "", "confidence": 0.95, "escalation_cause": ""}
-    create, _, ask = split_by_confidence([confident])
-    assert not ask
-    assert create[0]["escalation_cause"] == ""
+    assert parse_match(reply, SMALL_BOARD)["escalation_cause"] == ""
 
 
 # --- scoring the effect -------------------------------------------------------
@@ -180,37 +166,37 @@ def test_a_correct_comment_needs_the_right_target():
         {"id": "gt1", "expected_effect": "comment", "expected_target": "B1"},
         {"id": "gt2", "expected_effect": "comment", "expected_target": "B1"},
     ]
-    decided = [
+    chosen = [
         {"id": "gt1", "effect": "comment", "target_id": "B1", "escalation_cause": ""},
         {"id": "gt2", "effect": "comment", "target_id": "B9", "escalation_cause": ""},
     ]
-    result = score(entries, decided)
+    result = score(entries, chosen)
     assert result["effect_correct"] == 2   # both chose to comment
     assert result["target_correct"] == 1   # only one aimed correctly
 
 
 def test_a_guardrail_escalation_is_not_a_correct_ask():
     entries = [{"id": "gt1", "expected_effect": "ask"}, {"id": "gt2", "expected_effect": "ask"}]
-    decided = [
+    chosen = [
         {"id": "gt1", "effect": "ask", "target_id": "", "escalation_cause": "low_confidence"},
         {"id": "gt2", "effect": "ask", "target_id": "", "escalation_cause": "unreadable"},
     ]
-    result = score(entries, decided)
+    result = score(entries, chosen)
     assert result["effect_correct"] == 1
     assert result["by_cause"]["unreadable"] == 1
 
 
 def test_unimplemented_effects_score_zero():
     entries = [{"id": "n1", "expected_effect": "verify_deadline", "expected_target": "B2"}]
-    decided = [{"id": "n1", "effect": "create", "target_id": "", "escalation_cause": ""}]
-    result = score(entries, decided)
+    chosen = [{"id": "n1", "effect": "create", "target_id": "", "escalation_cause": ""}]
+    result = score(entries, chosen)
     assert result["effect_correct"] == 0
     assert result["per_effect"]["verify_deadline"] == {"total": 1, "correct": 0}
 
 
 def test_a_miss_records_what_the_agent_was_about_to_do():
     entries = [{"id": "gt1", "expected_effect": "comment", "expected_target": "B1"}]
-    decided = [
+    chosen = [
         {
             "id": "gt1",
             "effect": "create",
@@ -220,12 +206,12 @@ def test_a_miss_records_what_the_agent_was_about_to_do():
             "reason": "nothing on the board covers this",
         }
     ]
-    miss = score(entries, decided)["misses"][0]
+    miss = score(entries, chosen)["misses"][0]
     assert miss["expected"] == "comment" and miss["got"] == "create"
     assert miss["intent"] == "NEW NONE"
 
 
-# --- replaying decisions at a different gate ----------------------------------
+# --- replaying matches at a different gate ------------------------------------
 
 from evals.eval_effects import effects_from
 
@@ -237,7 +223,7 @@ def _entries():
     ]
 
 
-def _decisions():
+def _matches():
     return [
         {"decision": "UPDATE", "target_id": "B1", "confidence": 0.75, "reason": "", "escalation_cause": ""},
         {"decision": "NEW", "target_id": "", "confidence": 0.75, "reason": "", "escalation_cause": ""},
@@ -246,35 +232,35 @@ def _decisions():
 
 def test_lowering_the_gate_lets_the_intended_effect_through():
     """The four calibration misses are exactly this: right call, below the gate."""
-    at_default = effects_from(_entries(), _decisions(), 0.8)
+    at_default = effects_from(_entries(), _matches(), 0.8)
     assert [d["effect"] for d in at_default] == ["ask", "ask"]
 
-    lowered = effects_from(_entries(), _decisions(), 0.7)
+    lowered = effects_from(_entries(), _matches(), 0.7)
     assert [d["effect"] for d in lowered] == ["comment", "create"]
     assert lowered[0]["target_id"] == "B1"
 
 
 def test_a_replay_clears_the_previous_passs_gate_stamp():
     """Sweeping thresholds must not inherit "low_confidence" from an earlier row."""
-    decisions = _decisions()
-    effects_from(_entries(), decisions, 0.8)          # would stamp low_confidence
-    lowered = effects_from(_entries(), decisions, 0.7)
+    matches = _matches()
+    effects_from(_entries(), matches, 0.8)            # would stamp low_confidence
+    lowered = effects_from(_entries(), matches, 0.7)
     assert [d["escalation_cause"] for d in lowered] == ["", ""]
 
 
 def test_a_guardrail_cause_survives_the_replay():
     """An unreadable reply is a fact about the reply, not about the gate."""
-    decisions = _decisions()
-    decisions[0]["escalation_cause"] = "unreadable"
-    decisions[0]["confidence"] = 0.0
-    out = effects_from(_entries(), decisions, 0.5)
+    matches = _matches()
+    matches[0]["escalation_cause"] = "unreadable"
+    matches[0]["confidence"] = 0.0
+    out = effects_from(_entries(), matches, 0.5)
     assert out[0]["escalation_cause"] == "unreadable"
 
 
-def test_replaying_does_not_mutate_the_saved_decisions():
+def test_replaying_does_not_mutate_the_saved_matches():
     """The cache on disk is the record of what the agent said; a sweep must not edit it."""
-    decisions = _decisions()
-    before = [dict(d) for d in decisions]
-    effects_from(_entries(), decisions, 0.5)
-    effects_from(_entries(), decisions, 0.95)
-    assert decisions == before
+    matches = _matches()
+    before = [dict(m) for m in matches]
+    effects_from(_entries(), matches, 0.5)
+    effects_from(_entries(), matches, 0.95)
+    assert matches == before

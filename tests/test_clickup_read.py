@@ -1,4 +1,11 @@
-"""Reading the board: unconfigured is empty, failing is an error, paged is complete."""
+"""Reading ClickUp: what a good answer produces, and what every bad one says.
+
+Every test here routes answers through the one transport the module makes its requests
+with (the `transport` fixture), so what is exercised is the public functions themselves —
+the board, the picker's lists, the workspace's members — against answers a real ClickUp
+can give: success, a 401, a dropped connection, an HTML error page from a proxy, and a
+200 whose JSON is not the shape the reader expects.
+"""
 
 from __future__ import annotations
 
@@ -7,15 +14,22 @@ import pytest
 from src import clickup
 from src.client import WorkbenchError
 
+API = clickup.API
+TEAM = "9018"
 
-class FakeResponse:
-    def __init__(self, status: int, payload: dict | None = None, text: str = ""):
-        self.status_code = status
-        self._payload = payload or {}
-        self.text = text
+BOARD = f"{API}/list/123/task"
+SPACES = f"{API}/team/{TEAM}/space"
+SPACE_LISTS = f"{API}/space/s1/list"
+FOLDERS = f"{API}/space/s1/folder"
+FOLDER_LISTS = f"{API}/folder/f1/list"
+TEAMS = f"{API}/team"
 
-    def json(self) -> dict:
-        return self._payload
+WORKSPACE = {
+    SPACES: {"spaces": [{"id": "s1", "name": "Product"}]},
+    SPACE_LISTS: {"lists": [{"id": "l1", "name": "Sprint"}]},
+    FOLDERS: {"folders": [{"id": "f1", "name": "Roadmap"}]},
+    FOLDER_LISTS: {"lists": [{"id": "l2", "name": "Q4"}]},
+}
 
 
 def _task(i: int) -> dict:
@@ -23,174 +37,303 @@ def _task(i: int) -> dict:
             "assignees": [], "due_date": None}
 
 
-def test_unconfigured_board_is_empty_not_an_error(monkeypatch):
+def _workspace(transport, skip: str = "") -> None:
+    """Route the four requests the picker makes, leaving out the one the test routed."""
+    for url, body in WORKSPACE.items():
+        if url != skip:
+            transport.answers(url, body)
+
+
+def _with_workspace(monkeypatch) -> None:
+    monkeypatch.setenv("CLICKUP_TEAM_ID", TEAM)
+
+
+# --- the board ---------------------------------------------------------------
+
+def test_unconfigured_board_is_empty_not_an_error(monkeypatch, transport):
     monkeypatch.delenv("CLICKUP_LIST_ID", raising=False)
     assert clickup.get_tasks() == []
+    assert transport.calls == []
 
 
-def test_a_failing_read_raises_instead_of_pretending_the_board_is_empty(monkeypatch):
+def test_a_board_row_is_what_every_consumer_expects(transport):
+    transport.answers(BOARD, {"tasks": [{
+        "id": "a", "name": "n", "status": {"status": "in progress"},
+        "assignees": [{"username": "Dana"}], "due_date": "1787097600000"}], "last_page": True})
+    assert clickup.get_tasks("123") == [{"id": "a", "name": "n", "status": "in progress",
+                                         "assignees": ["Dana"], "due_date": "2026-08-19"}]
+
+
+def test_a_failing_read_raises_instead_of_pretending_the_board_is_empty(transport):
     # An expired token used to return [] — and every meeting point became new work.
-    monkeypatch.setenv("CLICKUP_API_TOKEN", "pk_test")
-    monkeypatch.setattr(clickup.requests, "get",
-                        lambda *a, **k: FakeResponse(401, text="Token invalid"))
+    transport.answers(BOARD, status=401, text="Token invalid")
     with pytest.raises(WorkbenchError) as exc:
         clickup.get_tasks("123")
     assert "401" in str(exc.value)
     assert "CLICKUP_API_TOKEN" in str(exc.value)
 
 
-def test_every_page_is_read(monkeypatch):
-    monkeypatch.setenv("CLICKUP_API_TOKEN", "pk_test")
-    pages = {
-        0: {"tasks": [_task(1), _task(2)], "last_page": False},
-        1: {"tasks": [_task(3)], "last_page": True},
-    }
-    seen = []
-
-    def fake_get(url, params=None, **kwargs):
-        seen.append(params["page"])
-        return FakeResponse(200, pages[params["page"]])
-
-    monkeypatch.setattr(clickup.requests, "get", fake_get)
+def test_every_page_is_read(transport):
+    transport.answers(BOARD, {"tasks": [_task(1), _task(2)], "last_page": False})
+    transport.answers(BOARD, {"tasks": [_task(3)], "last_page": True})
     board = clickup.get_tasks("123")
     assert [t["id"] for t in board] == ["t1", "t2", "t3"]
-    assert seen == [0, 1]
+    assert [call.params["page"] for call in transport.calls] == [0, 1]
 
 
-def test_a_single_page_without_last_page_flag_still_stops(monkeypatch):
-    monkeypatch.setenv("CLICKUP_API_TOKEN", "pk_test")
-    monkeypatch.setattr(clickup.requests, "get",
-                        lambda *a, **k: FakeResponse(200, {"tasks": [_task(1)]}))
+def test_a_single_page_without_last_page_flag_still_stops(transport):
+    transport.answers(BOARD, {"tasks": [_task(1)]})
     assert len(clickup.get_tasks("123")) == 1
 
 
-def test_network_failure_is_a_workbench_error(monkeypatch):
-    monkeypatch.setenv("CLICKUP_API_TOKEN", "pk_test")
-
-    def boom(*a, **k):
-        raise clickup.requests.ConnectionError("down")
-
-    monkeypatch.setattr(clickup.requests, "get", boom)
+def test_network_failure_is_a_workbench_error(transport):
+    transport.drops(BOARD)
     with pytest.raises(WorkbenchError):
         clickup.get_tasks("123")
 
 
-def test_task_row_keeps_the_board_shape():
-    row = clickup._task_row({"id": "a", "name": "n", "status": {"status": "in progress"},
-                             "assignees": [{"username": "Dana"}], "due_date": "1787097600000"})
-    assert row == {"id": "a", "name": "n", "status": "in progress",
-                   "assignees": ["Dana"], "due_date": "2026-08-19"}
+def test_a_board_answer_that_is_not_json_is_a_sentence(transport):
+    transport.answers(BOARD, text="<html>502 Bad Gateway</html>")
+    with pytest.raises(WorkbenchError) as exc:
+        clickup.get_tasks("123")
+    assert "JSON" in str(exc.value)
 
 
-def test_a_repeating_page_response_does_not_loop_forever(monkeypatch):
-    # A malformed "repeating page" response keeps last_page False with non-empty
-    # tasks on every call. The ceiling must be enforced inside the loop, or this
-    # hangs forever issuing HTTP calls. Bound our own exposure: fail the test with
-    # an AssertionError (not a hang) if get_tasks calls requests.get more than 50
-    # times without stopping.
-    monkeypatch.setenv("CLICKUP_API_TOKEN", "pk_test")
-    page = {"tasks": [_task(i) for i in range(50)], "last_page": False}
-    calls = {"n": 0}
+def test_a_board_answer_of_the_wrong_shape_is_a_sentence_not_a_traceback(transport):
+    # A 200 whose tasks are not a list of tasks used to reach _task_row and raise
+    # AttributeError from inside the read.
+    transport.answers(BOARD, {"tasks": "none"})
+    with pytest.raises(WorkbenchError) as exc:
+        clickup.get_tasks("123")
+    assert "tasks" in str(exc.value)
 
-    def fake_get(url, params=None, **kwargs):
-        calls["n"] += 1
-        if calls["n"] > 50:
-            raise AssertionError(
-                "get_tasks did not stop paging a repeating response within 50 calls"
-            )
-        return FakeResponse(200, page)
 
-    monkeypatch.setattr(clickup.requests, "get", fake_get)
+def test_a_board_answer_with_no_tasks_at_all_is_a_failed_read(transport):
+    # ClickUp answers 200 with an error body of its own on occasion. Read as an empty
+    # board, that turns every point in the meeting into new work — the silent failure
+    # the whole reconcile stage exists to prevent — so an answer that carries no board
+    # at all is a failed read, not an empty one.
+    transport.answers(BOARD, {"err": "Team not authorized", "ECODE": "OAUTH_027"})
+    with pytest.raises(WorkbenchError) as exc:
+        clickup.get_tasks("123")
+    assert "tasks" in str(exc.value)
+
+
+def test_an_empty_board_is_still_an_empty_board(transport):
+    # The leniency that goes is only about a missing board. A list with nothing open
+    # answers with an empty one, and that is a board that was read.
+    transport.answers(BOARD, {"tasks": [], "last_page": True})
+    assert clickup.get_tasks("123") == []
+
+
+def test_a_repeating_page_response_does_not_loop_forever(transport):
+    # A malformed "repeating page" response keeps last_page False with non-empty tasks on
+    # every call. The ceiling must be enforced inside the loop, or this hangs forever
+    # issuing HTTP calls. The test bounds its own exposure: the routed answer is the only
+    # one, so a run that never stopped would keep counting calls — assert it stopped.
+    transport.answers(BOARD, {"tasks": [_task(i) for i in range(50)], "last_page": False})
     with pytest.raises(WorkbenchError):
         clickup.get_tasks("123")
+    assert len(transport.calls) < 10
 
 
-def test_a_board_over_the_ceiling_raises_naming_the_count(monkeypatch):
-    monkeypatch.setenv("CLICKUP_API_TOKEN", "pk_test")
+def test_a_board_over_the_ceiling_raises_naming_the_count(transport):
     total = clickup.MAX_BOARD + 1
-
-    def fake_get(url, params=None, **kwargs):
-        return FakeResponse(200, {"tasks": [_task(i) for i in range(total)], "last_page": True})
-
-    monkeypatch.setattr(clickup.requests, "get", fake_get)
+    transport.answers(BOARD, {"tasks": [_task(i) for i in range(total)], "last_page": True})
     with pytest.raises(WorkbenchError) as exc:
         clickup.get_tasks("123")
     assert str(total) in str(exc.value)
     assert str(clickup.MAX_BOARD) in str(exc.value)
 
 
-# --- the list picker: no workspace is empty, a failing read is an error ---
+# --- the list picker ---------------------------------------------------------
 
-TEAM = "9018"
-WORKSPACE = {
-    f"{clickup.API}/team/{TEAM}/space": {"spaces": [{"id": "s1", "name": "Product"}]},
-    f"{clickup.API}/space/s1/list": {"lists": [{"id": "l1", "name": "Sprint"}]},
-    f"{clickup.API}/space/s1/folder": {"folders": [{"id": "f1", "name": "Roadmap"}]},
-    f"{clickup.API}/folder/f1/list": {"lists": [{"id": "l2", "name": "Q4"}]},
-}
-
-
-class NotJsonResponse(FakeResponse):
-    """A 200 whose body is not JSON — an HTML error page from a proxy, say."""
-
-    def json(self) -> dict:
-        raise clickup.requests.exceptions.JSONDecodeError("Expecting value", self.text, 0)
-
-
-def _workspace(monkeypatch, fail_on: str = "", failure=None) -> None:
-    """Serve WORKSPACE, except that the request for `fail_on` gets `failure`: a response
-    to return, or an exception to raise."""
-    monkeypatch.setenv("CLICKUP_API_TOKEN", "pk_test")
-    monkeypatch.setenv("CLICKUP_TEAM_ID", TEAM)
-
-    def fake_get(url, **kwargs):
-        if url == fail_on:
-            if isinstance(failure, Exception):
-                raise failure
-            return failure
-        return FakeResponse(200, WORKSPACE[url])
-
-    monkeypatch.setattr(clickup.requests, "get", fake_get)
-
-
-def test_no_workspace_means_no_lists_and_no_request(monkeypatch):
+def test_no_workspace_means_no_lists_and_no_request(monkeypatch, transport):
     monkeypatch.delenv("CLICKUP_TEAM_ID", raising=False)
-
-    def no_call(*a, **k):
-        raise AssertionError("get_lists made a request with no workspace configured")
-
-    monkeypatch.setattr(clickup.requests, "get", no_call)
     assert clickup.get_lists() == []
+    assert transport.calls == []
 
 
-def test_a_workspace_lists_its_lists_with_their_space(monkeypatch):
-    _workspace(monkeypatch)
+def test_a_workspace_lists_its_lists_with_their_space(monkeypatch, transport):
+    _with_workspace(monkeypatch)
+    _workspace(transport)
     assert clickup.get_lists() == [
         {"id": "l1", "name": "Sprint", "space": "Product"},
         {"id": "l2", "name": "Roadmap / Q4", "space": "Product"},
     ]
 
 
-@pytest.mark.parametrize("url", list(WORKSPACE), ids=lambda url: url.replace(clickup.API, ""))
-def test_a_failing_list_read_raises_naming_the_status(monkeypatch, url):
+@pytest.mark.parametrize("url", list(WORKSPACE), ids=lambda url: url.replace(API, ""))
+def test_a_failing_list_read_raises_naming_the_status(monkeypatch, transport, url):
     # An expired token made the picker read as "No ClickUp list configured", and the run
     # went ahead board-blind. Whichever of its requests fails, get_lists has to say so.
-    _workspace(monkeypatch, fail_on=url, failure=FakeResponse(401, text="Token invalid"))
+    _with_workspace(monkeypatch)
+    transport.answers(url, status=401, text="Token invalid")
+    _workspace(transport, skip=url)
     with pytest.raises(WorkbenchError) as exc:
         clickup.get_lists()
     assert "401" in str(exc.value)
     assert "CLICKUP_API_TOKEN" in str(exc.value)
 
 
-def test_a_network_error_listing_lists_is_a_workbench_error(monkeypatch):
-    _workspace(monkeypatch, fail_on=f"{clickup.API}/team/{TEAM}/space",
-               failure=clickup.requests.ConnectionError("down"))
+def test_a_network_error_listing_lists_is_a_workbench_error(monkeypatch, transport):
+    _with_workspace(monkeypatch)
+    transport.drops(SPACES)
     with pytest.raises(WorkbenchError):
         clickup.get_lists()
 
 
-def test_a_list_read_that_is_not_json_is_a_workbench_error(monkeypatch):
-    _workspace(monkeypatch, fail_on=f"{clickup.API}/folder/f1/list",
-               failure=NotJsonResponse(200, text="<html>502 Bad Gateway</html>"))
-    with pytest.raises(WorkbenchError):
+def test_a_list_read_that_is_not_json_is_a_workbench_error(monkeypatch, transport):
+    _with_workspace(monkeypatch)
+    transport.answers(FOLDER_LISTS, text="<html>502 Bad Gateway</html>")
+    _workspace(transport, skip=FOLDER_LISTS)
+    with pytest.raises(WorkbenchError) as exc:
         clickup.get_lists()
+    assert "JSON" in str(exc.value)
+
+
+def test_an_answer_that_is_not_an_object_is_a_sentence_not_a_traceback(monkeypatch, transport):
+    # A 200 carrying a JSON list — one proxy's way of saying "no content" — used to reach
+    # .get() on a list and stop the page with an AttributeError.
+    _with_workspace(monkeypatch)
+    transport.answers(SPACES, [])
+    with pytest.raises(WorkbenchError) as exc:
+        clickup.get_lists()
+    assert "object" in str(exc.value)
+
+
+def test_a_space_with_no_id_or_name_is_a_sentence_not_a_traceback(monkeypatch, transport):
+    # Anything but {id, name} used to leave the picker with a KeyError traceback.
+    _with_workspace(monkeypatch)
+    transport.answers(SPACES, {"spaces": [{"private": True}]})
+    with pytest.raises(WorkbenchError) as exc:
+        clickup.get_lists()
+    assert "id" in str(exc.value) and "name" in str(exc.value)
+
+
+# --- the workspace's members -------------------------------------------------
+
+def test_a_list_named_with_nothing_does_not_cost_the_whole_picker(monkeypatch, transport):
+    # An entry with no id or no name at all is an answer nobody here can read. An entry
+    # named with an empty string is a list someone left unnamed: it shows as it is,
+    # rather than costing every other list in the workspace its place in the picker.
+    monkeypatch.setenv("CLICKUP_TEAM_ID", "team1")
+    transport.answers(f"{API}/team/team1/space", {"spaces": [{"id": "s1", "name": "Space"}]})
+    transport.answers(f"{API}/space/s1/list", {"lists": [{"id": "l1", "name": ""},
+                                                         {"id": "l2", "name": "Sprint"}]})
+    transport.answers(f"{API}/space/s1/folder", {"folders": []})
+    assert [l["id"] for l in clickup.get_lists()] == ["l1", "l2"]
+
+
+def test_a_member_read_that_is_not_json_is_a_workbench_error(monkeypatch, transport):
+    monkeypatch.setenv("CLICKUP_TEAM_ID", "team1")
+    transport.answers(f"{API}/team", None, text="<html>gateway</html>")
+    with pytest.raises(WorkbenchError) as exc:
+        clickup.get_members()
+    assert "other than JSON" in str(exc.value)
+
+
+def test_no_workspace_means_no_members_and_no_request(monkeypatch, transport):
+    monkeypatch.delenv("CLICKUP_TEAM_ID", raising=False)
+    assert clickup.get_members() == []
+    assert transport.calls == []
+
+
+def test_the_members_of_this_workspace_come_back_as_id_and_name(monkeypatch, transport):
+    _with_workspace(monkeypatch)
+    transport.answers(TEAMS, {"teams": [
+        {"id": "other", "members": [{"user": {"id": 1, "username": "Somebody else"}}]},
+        {"id": TEAM, "members": [
+            {"user": {"id": 222150225, "username": "Natallia Chmurova"}},
+            {"user": {"id": 999, "username": "Marco Rossi"}},
+            {"user": {}},                       # an invitation nobody accepted
+        ]},
+    ]})
+    assert clickup.get_members() == [{"id": "222150225", "name": "Natallia Chmurova"},
+                                     {"id": "999", "name": "Marco Rossi"}]
+
+
+def test_a_failing_member_read_is_a_workbench_error(monkeypatch, transport):
+    _with_workspace(monkeypatch)
+    transport.answers(TEAMS, status=401, text="Token invalid")
+    with pytest.raises(WorkbenchError) as exc:
+        clickup.get_members()
+    assert "401" in str(exc.value)
+
+
+def test_a_dropped_member_read_is_a_workbench_error(monkeypatch, transport):
+    _with_workspace(monkeypatch)
+    transport.drops(TEAMS)
+    with pytest.raises(WorkbenchError):
+        clickup.get_members()
+
+
+# --- what every request carries ----------------------------------------------
+
+def test_every_request_carries_the_token_and_a_timeout(transport):
+    transport.answers(BOARD, {"tasks": [], "last_page": True})
+    transport.answers(f"{API}/task/86abc/comment", {"id": "c1"})
+    clickup.get_tasks("123")
+    clickup.add_comment("86abc", "text")
+    assert len(transport.calls) == 2
+    for call in transport.calls:
+        assert call.headers["Authorization"] == "pk_test"
+        assert call.headers["Content-Type"] == "application/json"
+        assert call.timeout
+
+
+def test_a_read_with_no_token_says_so_before_asking(monkeypatch, transport):
+    monkeypatch.delenv("CLICKUP_API_TOKEN", raising=False)
+    with pytest.raises(WorkbenchError) as exc:
+        clickup.get_tasks("123")
+    assert "CLICKUP_API_TOKEN" in str(exc.value)
+    assert transport.calls == []
+
+
+ROSTER_ALIASES = "Dana:222150225, Priya:222150225"
+
+
+
+# --- the live roster: read from the tracker, and never a raise -----------------
+
+TEAMS = f"{API}/team"
+
+
+def _configured(monkeypatch) -> None:
+    monkeypatch.setenv("CLICKUP_TEAM_ID", "9018")
+    monkeypatch.setenv("OWNER_ALIASES", ROSTER_ALIASES)
+
+
+def test_the_live_roster_is_the_tracker_s_members_and_the_aliases(monkeypatch, transport):
+    _configured(monkeypatch)
+    transport.answers(TEAMS, {"teams": [{"id": "9018", "members": [
+        {"user": {"id": 999, "username": "Marco Rossi"}}]}]})
+    assert clickup.team_roster() == [{"name": "Marco Rossi", "id": "999"},
+                             {"name": "Dana", "id": "222150225"},
+                             {"name": "Priya", "id": "222150225"}]
+
+
+def test_a_roster_the_tracker_cannot_be_reached_for_is_the_aliases(monkeypatch, transport):
+    # The roster is read before every run, and it is not what a run is for: raising here
+    # would stop a transcript that needs no tracker at all. The aliases still name people,
+    # and with none of them the prompts read names out of the transcript.
+    _configured(monkeypatch)
+    transport.drops(TEAMS)
+    assert [r["name"] for r in clickup.team_roster()] == ["Dana", "Priya"]
+
+
+def test_a_roster_the_tracker_answered_strangely_is_the_aliases(monkeypatch, transport):
+    # Every way a member read can fail degrades the same way — a refused token, a dropped
+    # connection, and a 200 that is not the shape a reader can read.
+    _configured(monkeypatch)
+    transport.answers(TEAMS, status=401, text="Token invalid")
+    assert [r["name"] for r in clickup.team_roster()] == ["Dana", "Priya"]
+    transport.answers(TEAMS, {"teams": "none"})
+    assert [r["name"] for r in clickup.team_roster()] == ["Dana", "Priya"]
+
+
+def test_an_unconfigured_roster_asks_the_tracker_nothing(monkeypatch, transport):
+    monkeypatch.delenv("CLICKUP_TEAM_ID", raising=False)
+    monkeypatch.setenv("OWNER_ALIASES", ROSTER_ALIASES)
+    assert [r["name"] for r in clickup.team_roster()] == ["Dana", "Priya"]
+    assert transport.calls == []

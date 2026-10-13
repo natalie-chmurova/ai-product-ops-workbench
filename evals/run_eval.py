@@ -39,7 +39,8 @@ load_dotenv(dotenv_path=ROOT / ".env")
 
 from src.artifacts import build_tasks            # noqa: E402
 from src.client import ask                        # noqa: E402
-from src.assignees import roster_line, team_roster  # noqa: E402
+from src.assignees import roster_line  # noqa: E402
+from src.clickup import team_roster  # noqa: E402
 from src.extract import extract_context           # noqa: E402
 
 JUDGE_PROMPT = """You are a strict evaluation judge. Compare a list of EXTRACTED tasks

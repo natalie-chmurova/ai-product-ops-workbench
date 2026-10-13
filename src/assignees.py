@@ -8,47 +8,19 @@ resolves a name to a workspace member id via, in order:
   2. a fuzzy match against the workspace members (first name, case-insensitive);
   3. otherwise None — the task is left unassigned (honest fallback).
 
-The resolution itself is pure (takes members + aliases), so it's unit-testable
-without hitting the API.
+Nothing here talks to ClickUp: the members come in as an argument, from
+`src/clickup.py`, where the token, every request and the live roster live. What is left
+is the work that can be read and tested on its own — the alias map, building a roster
+out of members and aliases, and the resolution.
 """
 
 from __future__ import annotations
 
 import os
 
-import requests
-
-from .client import WorkbenchError
-
-API = "https://api.clickup.com/api/v2"
-
 
 def normalize(name: str | None) -> str:
     return (name or "").strip().lower()
-
-
-def _headers() -> dict:
-    token = os.environ.get("CLICKUP_API_TOKEN")
-    if not token:
-        raise WorkbenchError("No CLICKUP_API_TOKEN found.")
-    return {"Authorization": token}
-
-
-def get_members() -> list[dict]:
-    """Return workspace members as [{'id': str, 'name': str}]."""
-    team_id = os.environ.get("CLICKUP_TEAM_ID")
-    if not team_id:
-        return []
-    teams = requests.get(f"{API}/team", headers=_headers(), timeout=20).json().get("teams", [])
-    for t in teams:
-        if str(t.get("id")) == str(team_id):
-            out = []
-            for m in t.get("members", []):
-                u = m.get("user", {})
-                if u.get("id") is not None:
-                    out.append({"id": str(u["id"]), "name": u.get("username") or ""})
-            return out
-    return []
 
 
 def alias_map() -> dict[str, str]:
@@ -97,20 +69,6 @@ def build_roster(members: list[dict], raw_aliases: str) -> list[dict]:
 def roster_line(roster: list[dict]) -> str:
     """Roster as a single line for a prompt: 'Dana, Marco, Priya'."""
     return ", ".join(r["name"] for r in roster)
-
-
-def team_roster() -> list[dict]:
-    """The live roster: tracker members plus configured aliases.
-
-    Never raises. With no ClickUp credentials configured you still get the
-    aliases; with nothing configured at all you get an empty roster, and the
-    prompts simply fall back to reading names out of the transcript.
-    """
-    try:
-        members = get_members()
-    except (WorkbenchError, requests.RequestException):
-        members = []
-    return build_roster(members, os.environ.get("OWNER_ALIASES", ""))
 
 
 def resolve_owner(name: str | None, members: list[dict], aliases: dict[str, str]) -> str | None:

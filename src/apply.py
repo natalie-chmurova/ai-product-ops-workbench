@@ -1,168 +1,138 @@
-"""Apply a board plan to the tracker — create what is new, comment on what exists — once.
+"""Apply a plan to the tracker — create what is new, comment on what exists — once.
 
-The plan is a set of effects. Each one is keyed the way the n8n Idempotency check node
-keys it and checked against the same store, so the app and the workflow share one
-memory of what has already been applied. A key is committed only after its effect
-succeeded; a failure leaves the effect free to be retried.
+The plan is a set of effects, built by `src/plan.py` and carrying the one list it was
+reconciled against. Each effect is keyed the way the n8n Idempotency check node keys it
+and checked against the same store, so the app and the workflow share one memory of what
+has already been applied. A key is committed only after its effect succeeded; a failure
+leaves the effect free to be retried.
 """
 
 from __future__ import annotations
 
-import os
-from datetime import date, datetime, timezone
-from pathlib import Path
+from datetime import date
 
-from .clickup import add_comment, list_url, push_context, push_one
+from .clickup import add_comment, creation_inputs, create_task, list_url
 from .client import WorkbenchError
-from .idempotency import IdempotencyStore, effect_key
-from .reconcile import GATE, split_by_confidence, target_label
+from .idempotency import (
+    ALREADY_APPLIED,
+    APPLIED,
+    FAILED,
+    REPEATED,
+    Attempt,
+    IdempotencyStore,
+    comment_body,
+    comment_key,
+    create_key,
+)
+from .plan import Plan
 
-STORE_PATH = Path(__file__).resolve().parent.parent / "state" / "processed_effects.jsonl"
+# Which side of the shared store wrote a record. The n8n workflow writes "sync" into the
+# same file; this is the app.
+SOURCE = "app"
 
 
-def comment_body(item: dict) -> str:
-    """What the comment is about — and the only thing its key is computed from."""
-    return (item.get("detail") or item.get("description") or item.get("name") or "").strip()
-
-
-def comment_text(item: dict, meeting_title: str, when: str) -> str:
+def comment_text(point: dict, meeting_title: str, when: str) -> str:
     """The comment a matched task receives: where it came from, then what was said.
 
     `when` is the date of the MEETING, which the person running this supplies. It is not
     today's date, and it is not part of the key.
     """
-    return f'From the meeting "{meeting_title}" ({when}):\n{comment_body(item)}'
+    return f'From the meeting "{meeting_title}" ({when}):\n{comment_body(point)}'
 
 
-def create_key(task: dict) -> str:
-    # A null description is no description. Read it the way comment_body reads its
-    # fields and the n8n Idempotency check reads it, (j.description || ''): str(None)
-    # would hash the word "None" and give one effect two keys in the store they share.
-    return effect_key("NEW", "", f"{task.get('name', '')} {task.get('description') or ''}".strip())
+def _tally(summary: dict, attempt: Attempt, applied: str) -> None:
+    """Count one attempt as the thing that actually happened to it.
 
-
-def comment_key(item: dict) -> str:
-    """Keyed on the body, never on the rendered comment.
-
-    The rendered text carries the meeting title and date, so hashing it would hand the
-    same effect a fresh key on a different day and comment twice. It would also disagree
-    with the n8n Idempotency check node, which hashes the item body alone — and two
-    stores that compute different keys for one effect are not one store, which is the
-    whole reason both write to this file.
+    The outcomes are the store's words, used here as the summary's own keys: spelling
+    them again would let the two drift, and a person reading "already applied" about an
+    effect nothing had ever written goes looking on the board for work that is not
+    there. `applied` is what a success is called in this loop — a create or a comment.
     """
-    return effect_key("UPDATE", item.get("target_id", ""), comment_body(item))
-
-
-def as_effects(decisions: list, decided: list, threshold: float = GATE) -> tuple:
-    """One (create, comment, ask) plan over both kinds of decision.
-
-    A reconciled task carries `decision` NEW/UPDATE; a reconciled meeting decision carries
-    `effect` comment/ask and structurally cannot be a create. Two shapes, the same three
-    outcomes — so each item is stamped with `intent` and the caller stops caring which
-    kind it was. Without this the plan tab showed decisions as comments and the button
-    never sent them.
-    """
-    create, comment, ask = split_by_confidence(decisions, threshold)
-    for d in create:
-        d["intent"] = "create"
-    for d in comment:
-        d["intent"] = "comment"
-    for d in ask:
-        d["intent"] = "create" if d.get("decision") == "NEW" else (
-            "comment" if d.get("target_id") else "")
-
-    for d in decided:
-        # A decision comments on work that exists, or goes to a human. Never a new task.
-        d["intent"] = "comment" if d.get("target_id") else ""
-        if d.get("effect") == "comment" and d.get("confidence", 0) >= threshold and d["intent"]:
-            comment.append(d)
-        else:
-            ask.append(d)
-    return create, comment, ask
-
-
-def ask_label(item: dict, board: list) -> str:
-    """What a person reads before ticking a doubtful call: what it would do, and where.
-
-    A comment names the task it would land on, name and id — for a doubtful comment that
-    match is the judgement being checked, and a label without it asks for a blind click.
-    A create says it creates. With no safe action the label reads as it always has, and
-    the caller shows it as needing manual handling.
-    """
-    intent = item.get("intent", "")
-    if intent == "comment":
-        action = f"comment on {target_label(item.get('target_id', ''), board)}"
-    elif intent == "create":
-        action = "create a new task"
+    if attempt.outcome == APPLIED:
+        summary[applied] += 1
+    elif attempt.outcome == FAILED:
+        summary["failed"].append(attempt.info)
     else:
-        action = intent or "no safe action"
-    return (f"{action} · **{item.get('name', '')}** — "
-            f"{item.get('reason', '')} (confidence {item.get('confidence', 0):.2f})")
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        # Named, not deduced: an outcome added later must be counted, not folded into
+        # whichever of these two is written last.
+        summary[attempt.outcome] += 1
 
 
 def apply_plan(
-    create: list[dict],
-    comment: list[dict],
-    list_id: str | None = None,
+    plan: Plan,
+    approved: list = (),
     store: IdempotencyStore | None = None,
     meeting_title: str = "",
     when: str | None = None,
 ) -> dict:
-    """Create every `create` item and comment on every `comment` item, each at most once."""
-    list_id = list_id or os.environ.get("CLICKUP_LIST_ID")
-    if not list_id:
-        raise WorkbenchError("No target list. Set CLICKUP_LIST_ID in your .env or pick a list.")
+    """Write `plan` to the list it was built against, each effect at most once.
+
+    `approved` is the asks a person ticked; each is applied as the effect the agent
+    intended, and one with no safe intent is not applied at all.
+    """
+    if not plan.scope:
+        # No fallback to a list from the environment: a plan written to a board it was
+        # never reconciled against duplicates the work already on that board.
+        raise WorkbenchError(
+            "This plan was built without a ClickUp list, so there is nothing to apply it "
+            "to. Pick a list and generate again."
+        )
+    # What a ticked ask becomes is the plan's own rule; asking the plan for it keeps
+    # this module to writing, and keeps one routing in one place.
+    plan = plan.with_approved(approved)
+    create, comment = plan.create, plan.comment
     if not create and not comment:
         raise WorkbenchError("The plan has nothing to apply.")
-    store = store or IdempotencyStore(STORE_PATH)
+    # Where the store keeps its records is the store's own business, and it is the
+    # file n8n appends to; a path derived here, from this module's location, was a
+    # second answer to that question.
+    store = store or IdempotencyStore()
     # The caller passes the meeting's date. Today is only the fallback for a caller that
     # has none — and it never reaches the key, so the fallback cannot cause a second
     # comment tomorrow.
     when = when or date.today().isoformat()
-    # The plan was reconciled against exactly one list, list_id, so every create is
-    # written there — never to a second, separately-configured backlog list. Discard the
-    # backlog id from push_context; a backlog-destined task still gets its "backlog" tag
-    # from push_one, it just never leaves the list this run belongs to.
-    members, aliases, _backlog_id = push_context()
+    # The plan was reconciled against exactly one list, so every create is written there
+    # — never to a second, separately-configured backlog list. Discard the backlog id
+    # from creation_inputs; a backlog-destined task still gets its "backlog" tag from
+    # create_task, it just never leaves the list this run belongs to.
+    members, aliases, _backlog_id = creation_inputs()
 
     summary = {
-        "created": 0, "commented": 0, "skipped": 0, "assigned": 0, "backlog": 0,
-        "failed": [], "total": len(create) + len(comment), "list_url": list_url(list_id),
+        "created": 0, "commented": 0, ALREADY_APPLIED: 0, REPEATED: 0,
+        "assigned": 0, "backlog": 0, "failed": [], "total": len(create) + len(comment),
+        "list_url": list_url(plan.scope),
     }
 
-    for task in create:
-        key = create_key(task)
-        if store.is_duplicate(key):
-            summary["skipped"] += 1
-            continue
-        store.mark_seen(key)
-        res = push_one(task, list_id, members, aliases, None)
-        if res["ok"]:
-            store.commit(key, {"kind": "NEW", "target": None,
-                               "preview": task.get("name", "")[:60], "ts": _now(), "source": "app"})
-            summary["created"] += 1
-            summary["assigned"] += res["assigned"]
-            summary["backlog"] += res["backlog"]
-        else:
-            summary["failed"].append(res["info"])
+    for effect in create:
+        # The store runs the effect, so the order — reserve, write, record — is its
+        # own; here there is only the writing and the counting.
+        attempt = store.apply_once(
+            create_key(effect.point),
+            lambda: _create(effect, plan.scope, members, aliases),
+            kind="NEW", target=None, preview=effect.name, source=SOURCE)
+        _tally(summary, attempt, "created")
+        if attempt.outcome == APPLIED:
+            # What a create reports beyond succeeding: who it landed on, and whether it
+            # went to the backlog.
+            summary["assigned"] += attempt.info["assigned"]
+            summary["backlog"] += attempt.info["backlog"]
 
-    for item in comment:
-        text = comment_text(item, meeting_title, when)
-        key = comment_key(item)
-        if store.is_duplicate(key):
-            summary["skipped"] += 1
-            continue
-        store.mark_seen(key)
-        ok, info = add_comment(item["target_id"], text)
-        if ok:
-            store.commit(key, {"kind": "UPDATE", "target": item["target_id"],
-                               "preview": item.get("name", "")[:60], "ts": _now(), "source": "app"})
-            summary["commented"] += 1
-        else:
-            summary["failed"].append(info)
+    for effect in comment:
+        text = comment_text(effect.point, meeting_title, when)
+        attempt = store.apply_once(
+            comment_key(effect.point),
+            lambda: add_comment(effect.target_id, text),
+            kind="UPDATE", target=effect.target_id, preview=effect.name, source=SOURCE)
+        _tally(summary, attempt, "commented")
 
     return summary
+
+
+def _create(effect, scope: str, members: list, aliases: dict) -> tuple:
+    """Create one task, and report it the way every effect reports itself: (ok, info).
+
+    On failure the info is the reason, as every other write in this pipeline answers —
+    so a caller counting failures never has to know which kind of effect it was reading.
+    """
+    res = create_task(effect.point, scope, members, aliases, None)
+    return res["ok"], res if res["ok"] else res["info"]

@@ -1,4 +1,4 @@
-"""Owner → assignee resolution (pure logic, no API)."""
+"""Owner → assignee resolution: pure logic, over members this module never fetches."""
 
 from src.assignees import build_roster, normalize, resolve_owner, roster_line
 

@@ -1,11 +1,21 @@
 {
   "normalize": [
     {"in": "  Saved   cards\n unblocked ", "out": "saved cards unblocked"},
-    {"in": "iOS", "out": "ios"}
+    {"in": "iOS", "out": "ios"},
+    {"in": "\u001cSaved\u001c\u001ccards\u001c", "out": "\u001csaved\u001c\u001ccards\u001c"},
+    {"in": "\u0085Saved\u0085cards\u0085", "out": "\u0085saved\u0085cards\u0085"},
+    {"in": "\ufeffSaved\ufeff\ufeffcards\ufeff", "out": "saved cards"},
+    {"in": "\u001dSaved\u001ecards\u001f", "out": "\u001dsaved\u001ecards\u001f"},
+    {"in": " \ufeff Saved \u001c cards \ufeff ", "out": "saved \u001c cards"}
   ],
   "effect_key": [
     {"kind": "UPDATE", "target": "86eyay0p7", "content": "Saved cards feature unblocked", "key": "48c7e738b2b8911f66739a32236f6e0af99c1ebf"},
     {"kind": "UPDATE", "target": "86ey9z6rc", "content": "Crash fix in code review", "key": "ea4e60440d94fb037f741c56f4377c2e26a420c8"},
-    {"kind": "NEW", "target": "", "content": "Investigate iOS checkout funnel  Pull session data and find where users drop off", "key": "cc2e2b757a17de13322942c6229404f2305a30ba"}
+    {"kind": "NEW", "target": "", "content": "Investigate iOS checkout funnel  Pull session data and find where users drop off", "key": "cc2e2b757a17de13322942c6229404f2305a30ba"},
+    {"kind": "UPDATE", "target": "86eyay0p7", "content": "\u001cSaved cards\u001cfeature unblocked\u001c", "key": "6750ab62650a41ebc0dc2928c3f721d1c1d18f1c"},
+    {"kind": "UPDATE", "target": "86ey9z6rc", "content": "\u0085Crash fix\u0085in code review\u0085", "key": "9cd6b564c21779fa2bdcb1a278799afd93ba60ab"},
+    {"kind": "UPDATE", "target": "86eyay0p7", "content": "\ufeffSaved cards\ufefffeature unblocked\ufeff", "key": "48c7e738b2b8911f66739a32236f6e0af99c1ebf"},
+    {"kind": "NEW", "target": "", "content": "\u001dInvestigate iOS\u001echeckout funnel\u001f", "key": "42854e41d4f5646db79b5a4a44d43c410bc9fdf5"},
+    {"kind": "NEW", "target": "", "content": "\ufeff\u001c Investigate iOS \u0085 checkout funnel \u001c\ufeff", "key": "455fdf53b6f90ecf9ec6b6ff328eb899d0555b99"}
   ]
 }

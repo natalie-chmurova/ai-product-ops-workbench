@@ -45,6 +45,26 @@ They read `WB_HOME` through `$env`, and n8n 2.x blocks `$env` inside Code nodes 
 of them with "access to env vars denied". The trade-off: every Code node can then read
 the n8n process's environment.
 
+## Telegram approvals need a public address
+
+`Ask approval (Telegram)` sends Approve / Reject buttons that link back to n8n's
+waiting webhook. Telegram rejects a button whose link points at `localhost` — the run
+stops at that node with *Bad Request: inline keyboard button URL ... is invalid: Wrong
+HTTP URL* — so n8n has to be told a public address for its webhooks:
+
+```bash
+brew install cloudflared
+cloudflared tunnel --url http://localhost:5678     # prints https://<random>.trycloudflare.com
+export WEBHOOK_URL=https://<random>.trycloudflare.com/
+export N8N_PROXY_HOPS=1                            # n8n now sits behind a proxy
+```
+
+Set both before starting n8n. A quick tunnel needs no Cloudflare account and gets a new
+address every time it starts, so start it fresh with n8n each time. While it runs, the
+n8n editor is reachable from the internet behind its login, and the approval links are
+signed by n8n. Approvals sent through the localhost address worked as late as July 2026
+and stopped being accepted by October.
+
 ## Keeping the prompt in sync
 
 The `Match agent (Claude)` node carries `prompts/match.md`, rendered by
@@ -56,7 +76,7 @@ fails whenever the two differ.
 
 The two `Confident?` IF nodes compare against a literal `0.8`, and the `Log decision`
 node labels each decision `auto` or `human` with its own `>= 0.8`. The Python side keeps
-the same number in `src.reconcile.GATE`; if one of the four moves, move the others.
+the same number in `src.plan.GATE`; if one of the four moves, move the others.
 
 ## One approval per run
 

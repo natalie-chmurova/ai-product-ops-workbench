@@ -12,11 +12,9 @@ def workbench(monkeypatch, tmp_path):
     """workbench.run with every model call and board read stubbed, writing under tmp_path.
 
     workbench.py loads .env when it is imported; this test must not see real keys, so
-    that call is disabled before the first import. A request that still reaches for the
-    network fails the test instead of leaving the machine.
+    that call is disabled before the first import.
     """
     import dotenv
-    import requests
 
     monkeypatch.setattr(dotenv, "load_dotenv", lambda *a, **k: False)
     import workbench as wb
@@ -24,8 +22,8 @@ def workbench(monkeypatch, tmp_path):
     def no_network(*a, **k):
         raise AssertionError("the CLI test reached for the network")
 
-    monkeypatch.setattr(requests, "get", no_network)
-    monkeypatch.setattr(requests, "post", no_network)
+    # HTTP is refused for the whole suite by the autouse fixture in conftest, at the
+    # transport itself; only the model call is stubbed here.
     monkeypatch.setattr("src.reconcile.ask", no_network)
     monkeypatch.setattr(wb, "OUTPUT_DIR", tmp_path / "outputs")
     monkeypatch.setattr(wb, "get_tasks", lambda: [])
@@ -69,3 +67,30 @@ def test_no_board_rewrites_the_plan(workbench, monkeypatch, tmp_path):
     plan = _plan_after_a_run(workbench, tmp_path)
     assert "Last meeting's task" not in plan
     assert "No board was read" in plan
+
+
+def test_the_plan_counts_the_meeting_decisions_it_shows(workbench, monkeypatch, tmp_path):
+    # One plan, counted once. A meeting decision listed in a section of its own was left
+    # out of the numbers the run reports, so the same run read "ask a human 0" beside a
+    # decision that is waiting for exactly that.
+    monkeypatch.setenv("CLICKUP_LIST_ID", "list1")
+    plan = _plan_after_a_run(workbench, tmp_path)
+    assert "Ship Wednesday" in plan
+    assert "## Ask a human (1)" in plan
+
+
+def test_a_board_fixture_holding_nothing_is_still_a_board_that_was_read(
+        workbench, monkeypatch, tmp_path):
+    # The run prints "Board: fixture ... (0 tasks)"; the plan beside it must not then say
+    # the board was not read. A fixture is not a tracker list, so the plan has no scope
+    # to be written to -- a different fact from whether a board was read.
+    monkeypatch.delenv("CLICKUP_LIST_ID", raising=False)
+    fixture = tmp_path / "board.json"
+    fixture.write_text('{"tasks": []}', encoding="utf-8")
+    transcript = tmp_path / "meeting.txt"
+    transcript.write_text("Dana: the release ships Wednesday.", encoding="utf-8")
+    (tmp_path / "outputs").mkdir()
+    workbench.run(transcript, fixture)
+    plan = (tmp_path / "outputs" / "board_plan.md").read_text(encoding="utf-8").lower()
+    assert "no open tasks" in plan
+    assert "not read" not in plan

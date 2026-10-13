@@ -88,6 +88,7 @@ src/
   artifacts.py      stage 2 — summary → tasks / sprint / bug triage / per-speaker
   render.py         stage 3 — artifacts → report.html
   reconcile.py      stage 1.5 — check each point against the board before acting
+  plan.py           one effect per point, built once and read by every screen
   clickup.py        reads the board and writes to it
   apply.py          applies a plan to the board, each effect at most once
 prompts/            the instructions for each stage (Markdown)

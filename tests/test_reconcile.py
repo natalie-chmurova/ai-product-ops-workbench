@@ -2,12 +2,9 @@
 
 from src.reconcile import (
     board_summary,
-    decisions_markdown,
-    parse_decision,
-    plan_markdown,
+    parse_match,
     reconcile,
-    reconcile_decisions,
-    split_by_confidence,
+    reconcile_meeting_decisions,
 )
 
 BOARD = [
@@ -25,23 +22,23 @@ def test_board_summary_empty_board():
     assert board_summary([]) == ""
 
 
-def test_parse_decision_update():
+def test_parse_match_update():
     reply = (
         "DECISION: UPDATE\n"
         "TASK_ID: 86abc\n"
         "CONFIDENCE: 0.9\n"
         "REASON: same saved-cards work"
     )
-    d = parse_decision(reply, BOARD)
+    d = parse_match(reply, BOARD)
     assert d["decision"] == "UPDATE"
     assert d["target_id"] == "86abc"
     assert d["confidence"] == 0.9
     assert d["reason"] == "same saved-cards work"
 
 
-def test_parse_decision_new_has_no_target():
+def test_parse_match_new_has_no_target():
     reply = "DECISION: NEW\nTASK_ID: NONE\nCONFIDENCE: 0.8\nREASON: nothing covers it"
-    d = parse_decision(reply, BOARD)
+    d = parse_match(reply, BOARD)
     assert d["decision"] == "NEW"
     assert d["target_id"] == ""
 
@@ -50,62 +47,30 @@ def test_update_pointing_off_board_loses_confidence():
     # the same guardrail the n8n workflow uses: an UPDATE must name a task that
     # actually exists, otherwise it is not trustworthy and goes to a human
     reply = "DECISION: UPDATE\nTASK_ID: 86zzz\nCONFIDENCE: 0.95\nREASON: invented id"
-    d = parse_decision(reply, BOARD)
+    d = parse_match(reply, BOARD)
     assert d["target_id"] == ""
     assert d["confidence"] == 0.0
 
 
 def test_garbage_reply_defaults_to_new_and_zero_confidence():
-    d = parse_decision("the model rambled instead of answering", BOARD)
+    d = parse_match("the model rambled instead of answering", BOARD)
     assert d["decision"] == "NEW"
     assert d["confidence"] == 0.0
 
 
 def test_escalation_always_carries_a_reason():
     # a human seeing "confidence 0.00 —" with no explanation cannot act on it
-    d = parse_decision("the model rambled instead of answering", BOARD)
+    d = parse_match("the model rambled instead of answering", BOARD)
     assert d["reason"], "an escalated item must say why it was escalated"
     assert "could not read" in d["reason"]
 
 
 def test_off_board_update_explains_itself():
-    d = parse_decision("DECISION: UPDATE\nTASK_ID: 86zzz\nCONFIDENCE: 0.9\nREASON:", BOARD)
+    d = parse_match("DECISION: UPDATE\nTASK_ID: 86zzz\nCONFIDENCE: 0.9\nREASON:", BOARD)
     assert "not on the board" in d["reason"]
 
 
-# --- turning decisions into a plan of board effects ---
-
-DECISIONS = [
-    {"name": "New alerting", "decision": "NEW", "target_id": "", "confidence": 0.9, "reason": "r1"},
-    {"name": "Saved cards update", "decision": "UPDATE", "target_id": "86abc",
-     "confidence": 0.9, "reason": "r2"},
-    {"name": "Unclear one", "decision": "UPDATE", "target_id": "86def",
-     "confidence": 0.4, "reason": "torn between two"},
-]
-
-
-def test_split_by_confidence_routes_low_confidence_to_human():
-    create, comment, ask = split_by_confidence(DECISIONS, threshold=0.8)
-    assert [d["name"] for d in create] == ["New alerting"]
-    assert [d["name"] for d in comment] == ["Saved cards update"]
-    assert [d["name"] for d in ask] == ["Unclear one"]
-
-
-def test_plan_lists_every_item_once():
-    md = plan_markdown(DECISIONS, BOARD, threshold=0.8)
-    for name in ("New alerting", "Saved cards update", "Unclear one"):
-        assert md.count(name) == 1
-
-
-def test_plan_names_the_target_task_for_comments():
-    md = plan_markdown(DECISIONS, BOARD, threshold=0.8)
-    # a comment is only actionable if you can see which task it lands on
-    assert "[Payments] Fix saved cards" in md
-
-
-def test_plan_on_empty_board_says_so():
-    md = plan_markdown([], [], threshold=0.8)
-    assert "no open tasks" in md.lower()
+# --- matching a point to the board ---
 
 
 def test_reconcile_normalises_stage1_field_names():
@@ -118,75 +83,18 @@ def test_reconcile_normalises_stage1_field_names():
     assert out[0]["decision"] == "NEW"
 
 
-def test_decisions_never_become_new_work():
-    # a decision changes existing work; "create a task" is not a valid outcome
-    out = reconcile_decisions([{"what": "Ship Wednesday, cut payments", "affects": "the release"}], [])
+def test_meeting_decisions_never_become_new_work():
+    # a meeting decision changes existing work; "create a task" is not a valid outcome
+    out = reconcile_meeting_decisions([{"what": "Ship Wednesday, cut payments", "affects": "the release"}], [])
     assert out[0]["effect"] == "ask"          # no board -> a human looks at it
     assert "create" not in str(out).lower() or out[0]["effect"] != "create"
 
 
-def test_decisions_markdown_shows_target_and_kind():
-    decided = [{"name": "Ship Wednesday, cut payments", "affects": "release", "kind": "scope_change",
-                "effect": "comment", "target_id": "86abc", "confidence": 0.9, "reason": "same release"}]
-    md = decisions_markdown(decided, BOARD, threshold=0.8)
-    assert "scope_change" in md
-    assert "[Payments] Fix saved cards" in md
-
-
-def test_low_confidence_decision_goes_to_a_human():
-    decided = [{"name": "Something vague", "affects": "?", "kind": "other",
-                "effect": "comment", "target_id": "86abc", "confidence": 0.3, "reason": "unsure"}]
-    md = decisions_markdown(decided, BOARD, threshold=0.8)
-    assert "ask a human" in md
-
-
-def test_a_doubtful_decision_shows_its_proposed_target():
-    # The person asked is checking the match itself, so the task it would land on is shown.
-    decided = [{"name": "Something vague", "affects": "?", "kind": "other",
-                "effect": "comment", "target_id": "86abc", "confidence": 0.3, "reason": "unsure"}]
-    md = decisions_markdown(decided, BOARD, threshold=0.8)
-    assert "ask a human" in md
-    assert "[Payments] Fix saved cards" in md and "86abc" in md
-
-
-def test_a_doubtful_update_in_the_plan_shows_its_proposed_target():
-    # A doubtful comment names the task it would land on, name and id. A doubtful create
-    # lands on none, even when the agent's reply named an id.
-    decisions = [
-        {"name": "Unclear one", "decision": "UPDATE", "target_id": "86def",
-         "confidence": 0.4, "reason": "torn between two"},
-        {"name": "Maybe new", "decision": "NEW", "target_id": "86abc",
-         "confidence": 0.5, "reason": "not sure it is new"},
-    ]
-    ask_lines = plan_markdown(decisions, BOARD, threshold=0.8).split("## Ask a human")[1].splitlines()
-    update_line = next(line for line in ask_lines if "Unclear one" in line)
-    new_line = next(line for line in ask_lines if "Maybe new" in line)
-    assert "[Android] Crash on product detail" in update_line and "86def" in update_line
-    assert "86abc" not in new_line and "[Payments] Fix saved cards" not in new_line
-
-
-def test_reconcile_on_empty_board_makes_no_decision_call():
+def test_reconcile_on_empty_board_makes_no_match_call():
     # nothing to match against means nothing to pay a model for
     out = reconcile([{"what": "anything"}], [])
     assert out[0]["confidence"] == 1.0
     assert "board is empty" in out[0]["reason"]
-
-
-# --- one gate, defined once ---
-
-import inspect
-
-from src.reconcile import GATE
-
-
-def test_one_gate_everywhere():
-    # The effect eval, the plan and the app must agree on where the gate is. Five
-    # copies of 0.8 is how a threshold sweep ends up moving one of them.
-    from evals.eval_effects import GATE as eval_gate
-
-    assert eval_gate == GATE == 0.8
-    for fn in (split_by_confidence, plan_markdown, decisions_markdown):
-        assert inspect.signature(fn).parameters["threshold"].default == GATE
 
 
 def test_reconcile_accepts_a_generated_task():

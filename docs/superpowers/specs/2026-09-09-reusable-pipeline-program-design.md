@@ -163,7 +163,7 @@ store. M1 fixes both and a parity test pins it.
 - `get_tasks()` distinguishes *not configured* (returns `[]`, board-blind mode, said out
   loud) from *failing* (raises `WorkbenchError` with the status and a hint). It reads
   every page.
-- The confidence gate becomes one constant, `src.reconcile.GATE`, imported by the plan,
+- The confidence gate becomes one constant, `src.plan.GATE`, imported by the plan,
   the app and the effect eval. n8n's IF nodes keep their literal 0.8; `n8n/README.md`
   says to keep them equal.
 - n8n: `scripts/sync_n8n_match_prompt.py` writes `prompts/match.md` into the Match agent
@@ -358,7 +358,8 @@ agent/human agreement line.
 
 - **Prompts are frozen until the stop decision is lifted.** M1–M3 do not edit any file in
   `prompts/`. M1's n8n work copies `match.md` as it is.
-- **One gate constant** (`src.reconcile.GATE`), from M1 on; `workbench.toml` feeds it from
+- **One gate constant** (`src.plan.GATE`, `src.reconcile.GATE` until WB-39 moved it
+  with the routing it governs), from M1 on; `workbench.toml` feeds it from
   M2 on.
 - **Python 3.9 compatibility holds through M1**; the floor moves to 3.11 in M2.
 - **Model stays `claude-sonnet-5`** through the programme; M2 makes it configurable, M4

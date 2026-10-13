@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""Agent-decision eval: is the board-sync agent's NEW-vs-UPDATE call correct?
+"""Match eval: is the board-sync agent's NEW-vs-UPDATE call correct?
 
-This evaluates the *agentic decision* at the heart of the board-sync workflow —
-not just whether tasks were extracted, but whether the agent correctly decides
-that a meeting point is new work vs. an update to an existing task, and (for
-updates) picks the right task.
+This evaluates the *match* at the heart of the board-sync workflow — not just
+whether tasks were extracted, but whether the agent correctly answers that a
+meeting point is new work vs. an update to an existing task, and (for updates)
+picks the right row. The file keeps its name: `decision` is the wire word, in
+the reply's DECISION: line and in every record this harness scores.
 
-Because the decision is categorical, it is scored by exact match against a
+Because the answer is categorical, it is scored by exact match against a
 labeled ground truth — no LLM judge needed. Runs N times (the model is
 non-deterministic) and averages.
 
-The instruction comes from `prompts/match.md`, the same file `src/reconcile.py`
-and the n8n Match agent node read. This harness used to keep its own copy, which
-drifted: it was still measuring an agent that had never been told a decision is
-an UPDATE, or that work already under way is not a second task.
+This harness calls `src.reconcile.match_one` — the same production match step
+the pipeline and the n8n Match agent node use — instead of keeping its own copy
+of the board text and the reply parsing. It used to keep a copy, which drifted:
+it was still measuring an agent that had never been told a meeting decision is
+an UPDATE, or that work already under way is not a second task (fixed in WB-21).
 
 Metrics:
   decision accuracy = correct NEW/UPDATE calls / total points
@@ -26,7 +28,6 @@ Writes: evals/decision_results.md
 from __future__ import annotations
 
 import json
-import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -36,32 +37,19 @@ sys.path.insert(0, str(ROOT))
 
 from dotenv import load_dotenv
 
-load_dotenv(dotenv_path=ROOT / ".env")
-
-from src.client import ask, load_prompt  # noqa: E402
+from src.reconcile import match_one  # noqa: E402
 
 GT = json.loads((ROOT / "evals" / "match_ground_truth.json").read_text(encoding="utf-8"))
-BOARD_TEXT = "\n".join(f"{t['id']} | {t['name']}" for t in GT["board"])
-BOARD_IDS = {t["id"] for t in GT["board"]}
-
-
-def decide(point: dict) -> tuple[str, str]:
-    reply = ask(
-        "You are a precise board-sync agent.",
-        load_prompt("match").format(
-            board=BOARD_TEXT, name=point["name"], detail=point["detail"]
-        ),
-        max_tokens=400,
-    )
-    decision = (re.search(r"DECISION:\s*(NEW|UPDATE)", reply, re.I) or [None, "NEW"])[1].upper()
-    target = (re.search(r"TASK_ID:\s*([A-Za-z0-9]+)", reply, re.I) or [None, ""])[1]
-    if target.upper() == "NONE" or target not in BOARD_IDS:
-        target = ""
-    return decision, target
 
 
 def main() -> None:
+    # Deferred to here rather than run at import time, so importing this module
+    # (as the test for this file does) cannot leak the project's real .env into
+    # the caller's environment.
+    load_dotenv(dotenv_path=ROOT / ".env")
+
     runs = int(sys.argv[1]) if len(sys.argv) > 1 else 3
+    board = GT["board"]
     points = GT["points"]
     updates = [p for p in points if p["expected_decision"] == "UPDATE"]
 
@@ -72,8 +60,11 @@ def main() -> None:
         dec_ok = 0
         tgt_ok = 0
         for p in points:
-            decision, target = decide(p)
-            d_correct = decision == p["expected_decision"]
+            match = match_one(p["name"], p["detail"], board)
+            # `decision` / `expected_decision` are the match record's and the ground
+            # truth's own field names; both are formats, kept as they are spelled.
+            new_or_update, target = match["decision"], match["target_id"]
+            d_correct = new_or_update == p["expected_decision"]
             dec_ok += d_correct
             if p["expected_decision"] == "UPDATE":
                 if d_correct and target == p["expected_target"]:

@@ -1,6 +1,8 @@
 """The n8n export must carry what the Python path carries. Drift here is silent."""
 
+import hashlib
 import json
+import re
 import shutil
 import subprocess
 from datetime import datetime, timezone
@@ -9,9 +11,9 @@ from pathlib import Path
 import pytest
 
 from scripts.sync_n8n_match_prompt import NODE, find_node, patch, render
-from src.apply import comment_key, create_key
 from src.clickup import _task_row
-from src.reconcile import board_summary, parse_decision, reconcile
+from src.idempotency import IdempotencyStore, comment_key, create_key
+from src.reconcile import board_summary, parse_match, reconcile
 
 ROOT = Path(__file__).resolve().parent.parent
 WORKFLOW = ROOT / "n8n" / "meeting-to-clickup-sync.workflow.json"
@@ -138,6 +140,18 @@ def test_state_and_log_both_live_under_wb_home():
         assert "'state/processed_effects.jsonl'" not in code, name
 
 
+def test_the_app_and_the_nodes_resolve_one_store_file(tmp_path, monkeypatch):
+    # Two processes append to this file and each reads what the other wrote, so they must
+    # resolve it by one rule, not by being handed the same path. The nodes' own line is
+    # the oracle: take the path they build under WB_HOME and hold the store's to it.
+    monkeypatch.setenv("WB_HOME", str(tmp_path))
+    for name in ("Idempotency check", "Mark processed"):
+        code = _node(name)["parameters"]["jsCode"]
+        under_wb_home = re.search(r"const STORE = base \+ '([^']+)';", code)
+        assert under_wb_home, f"{name} no longer builds STORE from base"
+        assert IdempotencyStore().path == Path(str(tmp_path) + under_wb_home.group(1)), name
+
+
 def test_mark_processed_commits_one_effect_not_the_whole_batch():
     # It ran once for all items and committed every fresh key on the first successful
     # apply — so an item a human then rejected, or one still waiting in Telegram, was
@@ -187,56 +201,112 @@ def _run_node(name: str, items: list, **stand_in) -> list:
 
 # --- one key spec: the app and the n8n Idempotency check key a point alike ---
 
-KEY_BOARD = [{"id": "86abc", "name": "[Payments] Fix saved cards", "status": "",
-              "assignees": [], "due_date": ""}]
-# One meeting point each, with the match agent's verdict on it.
+# The board as Fetch board hands it to Board summary, and as the app reads it.
+KEY_TASKS = [{"id": "86abc", "name": "[Payments] Fix saved cards",
+              "status": {"status": "to do"}, "assignees": [], "due_date": None}]
+KEY_BOARD = [_task_row(t) for t in KEY_TASKS]
+# One meeting point each, with the match agent's verdict on it. Python's \s and strip()
+# take U+001C-U+001F and U+0085 as whitespace and leave U+FEFF out; JavaScript's \s and
+# trim(), which the node runs, do the opposite -- so those sit inside a body and at its
+# ends. Letters with case (Ä, İ, a final and a non-final Σ) hold the lowercasing to it too.
+FS, NEL, BOM = chr(0x1C), chr(0x85), chr(0xFEFF)  # file separator, next line, byte order mark
 KEY_CASES = {
     "new-with-description": (
         {"name": "[Dev] New alerting", "description": "Goal:\nalert on CDN errors"}, "NEW"),
     "new-description-null": ({"name": "[Dev] Null description", "description": None}, "NEW"),
     "new-no-description-key": ({"name": "[Dev] No description"}, "NEW"),
+    "new-name-null": ({"name": None, "description": "alert on CDN errors"}, "NEW"),
+    "new-body-with-u001c-u0085-ufeff": (
+        {"name": "[Dev] New alerting",
+         "description": f"{FS}alert{NEL}on{BOM}CDN errors{BOM}{NEL}{FS}"}, "NEW"),
+    "new-letters-with-case": (
+        {"name": "[Ops] ÄRGER IN İSTANBUL", "description": "ΟΔΟΣ ΣΑΣ Σ"}, "NEW"),
     "update-body-from-description": (
         {"name": "[Payments] Saved cards", "description": "provider fixed the sandbox"}, "UPDATE"),
     "update-body-falls-back-to-name": (
         {"name": "[Dev] Crash fix in review", "description": None}, "UPDATE"),
+    "update-name-null-falls-back-to-nothing": ({"name": None, "description": None}, "UPDATE"),
+    "update-body-with-u001c": (
+        {"name": "[Payments] Saved cards",
+         "description": f"{FS}provider{FS}fixed the sandbox{FS}"}, "UPDATE"),
+    "update-body-with-u0085": (
+        {"name": "[Payments] Saved cards",
+         "description": f"{NEL}provider{NEL}fixed the sandbox{NEL}"}, "UPDATE"),
+    "update-body-with-ufeff": (
+        {"name": "[Payments] Saved cards",
+         "description": f"{BOM}provider{BOM}fixed the sandbox{BOM}"}, "UPDATE"),
+    "update-letters-with-case": (
+        {"name": "[Payments] Saved cards", "description": "Ärger in İSTANBUL: ΟΔΟΣ ΣΑΣ"}, "UPDATE"),
 }
 
 
-def _task_id(decision: str) -> str:
-    return KEY_BOARD[0]["id"] if decision == "UPDATE" else "NONE"
-
-
-def _as_parse_decision_emits(point: dict, decision: str) -> dict:
-    """What Idempotency check receives for this point: the point plus Parse decision's
-    verdict. `target_id` is the TASK_ID as that node parses it, and `comment` is its own
-    expression, (item.description || item.name || '').trim()."""
-    return {**point, "is_update": decision == "UPDATE", "target_id": _task_id(decision),
-            "comment": (point.get("description") or point.get("name") or "").strip()}
+def _match_reply(decision: str) -> str:
+    """The match agent's answer for a case: an UPDATE names the board's task, a NEW none."""
+    task_id = KEY_TASKS[0]["id"] if decision == "UPDATE" else "NONE"
+    return f"DECISION: {decision}\nTASK_ID: {task_id}\nCONFIDENCE: 0.9\nREASON: canned"
 
 
 @pytest.fixture(scope="module")
-def node_keys(tmp_path_factory):
-    """Every case keyed by the Idempotency check node's own code, in one run. WB_HOME is
-    an empty directory, so the node's read of the store finds nothing."""
+def node_keyed(tmp_path_factory):
+    """Every case through the nodes' own code, chained as the workflow chains them: Board
+    summary renders the board, Parse decision merges each point with its reply, and
+    Idempotency check keys what Parse decision emitted. WB_HOME is an empty directory, so
+    the node's read of the store finds nothing.
+    Returns {case: (the item Idempotency check was given, the key it computed)}."""
     _needs_node()
-    items = [_as_parse_decision_emits(point, decision) for point, decision in KEY_CASES.values()]
-    out = _run_node("Idempotency check", items,
-                    env={"WB_HOME": str(tmp_path_factory.mktemp("wb_home"))})
-    return {case: item["idem_key"] for case, item in zip(KEY_CASES, out)}
+    summary = _run_node("Board summary", KEY_TASKS)[0]
+    points = [point for point, _ in KEY_CASES.values()]
+    replies = [{"content": [{"type": "text", "text": _match_reply(decision)}]}
+               for _, decision in KEY_CASES.values()]
+    parsed = _run_node("Parse decision", replies,
+                       nodes={"Parse tasks": points, "Board summary": [summary]})
+    keyed = _run_node("Idempotency check", parsed,
+                      env={"WB_HOME": str(tmp_path_factory.mktemp("wb_home"))})
+    return {case: (item, out["idem_key"]) for case, item, out in zip(KEY_CASES, parsed, keyed)}
 
 
 @pytest.mark.parametrize("case", list(KEY_CASES))
-def test_the_app_keys_a_point_as_the_idempotency_check_node_does(case, node_keys, monkeypatch):
-    # The app and n8n share one store only if both compute one key per effect. The key
-    # formula is pinned by tests/idempotency_vectors.json; what can drift is the assembly
-    # -- which field, which fallback, which separator -- so this runs the node's own code
-    # and compares its key with the app's for the same point, as reconcile() hands it on.
+def test_the_app_keys_a_point_as_the_idempotency_check_node_does(case, node_keyed, monkeypatch):
+    # The app and n8n share one store only if both compute one key per effect. This runs
+    # the nodes' own code and holds the app's key to theirs for the same point: on the
+    # record reconcile() hands on, which is what the app applies, and on the very item
+    # the node keyed. What can drift is the assembly (which field, which fallback) and the
+    # normalising (which characters are whitespace, how letters lowercase); the node's
+    # output is the oracle for both.
     point, decision = KEY_CASES[case]
-    reply = f"DECISION: {decision}\nTASK_ID: {_task_id(decision)}\nCONFIDENCE: 0.9\nREASON: canned"
-    monkeypatch.setattr("src.reconcile.ask", lambda system, prompt, max_tokens=400: reply)
-    reconciled = reconcile([dict(point)], KEY_BOARD)[0]
-    app_key = create_key(reconciled) if decision == "NEW" else comment_key(reconciled)
-    assert app_key == node_keys[case]
+    node_item, node_key = node_keyed[case]
+    key = create_key if decision == "NEW" else comment_key
+    monkeypatch.setattr("src.reconcile.ask",
+                        lambda system, prompt, max_tokens=400: _match_reply(decision))
+    assert key(reconcile([dict(point)], KEY_BOARD)[0]) == node_key
+    assert key(node_item) == node_key
+
+
+# --- the reference vectors are the node's own keys ---
+
+VECTORS = json.loads((ROOT / "tests" / "idempotency_vectors.json").read_text(encoding="utf-8"))
+
+
+def _keyed_as(kind: str, target: str, content: str) -> dict:
+    """An item the Idempotency check node keys as exactly (kind, target, content)."""
+    if kind == "UPDATE":
+        return {"is_update": True, "target_id": target, "comment": content}
+    return {"is_update": False, "target_id": "NONE", "name": content, "description": ""}
+
+
+def test_the_idempotency_check_node_computes_every_reference_vector(tmp_path):
+    # tests/test_idempotency.py holds Python to these vectors on any machine; this holds
+    # the vectors to the node, so they cannot be regenerated from Python to cover a drift.
+    # A normalize vector is checked through its key: given `in`, the node hashes `out`.
+    _needs_node()
+    effects = [(v["kind"], v["target"], v["content"]) for v in VECTORS["effect_key"]]
+    effects += [("UPDATE", "t", v["in"]) for v in VECTORS["normalize"]]
+    keyed = _run_node("Idempotency check", [_keyed_as(*e) for e in effects],
+                      env={"WB_HOME": str(tmp_path)})
+    expected = [v["key"] for v in VECTORS["effect_key"]]
+    expected += [hashlib.sha1(f"UPDATE|t|{v['out']}".encode("utf-8")).hexdigest()
+                 for v in VECTORS["normalize"]]
+    assert [out["idem_key"] for out in keyed] == expected
 
 
 # --- an UPDATE target counts only if it is exactly a board id ---
@@ -266,7 +336,7 @@ def _update_reply(task_id: str) -> str:
 
 
 @pytest.fixture(scope="module")
-def parse_decision_run():
+def parse_match_run():
     """Board summary's own code renders the board; Parse decision's own code reads every
     reply against it. Returns (Board summary's json, {case: Parse decision's json})."""
     _needs_node()
@@ -279,18 +349,18 @@ def parse_decision_run():
     return summary, dict(zip(TASK_IDS, parsed))
 
 
-def test_board_summary_hands_on_the_board_ids(parse_decision_run):
-    summary, _ = parse_decision_run
+def test_board_summary_hands_on_the_board_ids(parse_match_run):
+    summary, _ = parse_match_run
     assert summary["ids"] == [t["id"] for t in SUMMARY_TASKS]
 
 
 @pytest.mark.parametrize("case", list(TASK_IDS))
-def test_parse_decision_takes_an_update_target_only_if_it_is_a_board_id(case, parse_decision_run):
+def test_parse_match_takes_an_update_target_only_if_it_is_a_board_id(case, parse_match_run):
     # The board text carries status, owner and due words, so a substring test against it
     # let "progress", a name, a year or a truncated id through at full confidence, down
-    # the automatic branch. parse_decision() checks exact ids and blanks the target; the
+    # the automatic branch. parse_match() checks exact ids and blanks the target; the
     # node has to reach the same target and confidence on the same reply and board.
-    _, parsed = parse_decision_run
-    expected = parse_decision(_update_reply(TASK_IDS[case]), [_task_row(t) for t in SUMMARY_TASKS])
+    _, parsed = parse_match_run
+    expected = parse_match(_update_reply(TASK_IDS[case]), [_task_row(t) for t in SUMMARY_TASKS])
     assert (parsed[case]["target_id"], parsed[case]["confidence"]) == (
         expected["target_id"], expected["confidence"])
