@@ -291,6 +291,8 @@ with left:
                 try:
                     st.session_state["tx_text"] = transcribe_audio(tmp)
                     st.session_state["tx_key"] = key
+                except WorkbenchError as exc:
+                    st.error(str(exc))
                 finally:
                     os.unlink(tmp)
         default_text = st.session_state.get("tx_text", DEMO_TRANSCRIPT)

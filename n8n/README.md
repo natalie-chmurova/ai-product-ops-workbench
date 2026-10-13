@@ -1,9 +1,11 @@
 # n8n workflows
 
 Three exports, in the order they were built. They are reference implementations of what
-the Python pipeline does, not portable products. The sync workflow hardcodes its demo
-transcript, its ClickUp team, space and list, and its owner ids, so importing it into
-another n8n instance means editing those first, then connecting the credentials.
+the Python pipeline does, not portable products. All three hardcode their demo
+transcript and the ClickUp team, space and list ids of the demo workspace; the sync
+workflow also carries ClickUp owner ids, and the two with Telegram carry `YOUR_CHAT_ID`
+where your chat id goes. Those ids are my demo workspace's — put in your own team, space,
+list and owner ids before the first run, then connect the credentials.
 
 | File | Workflow | What it adds |
 |---|---|---|

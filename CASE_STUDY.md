@@ -2,7 +2,7 @@
 
 **One-liner:** I built a tool that turns a raw product-meeting transcript into
 ClickUp-ready tasks, a stakeholder sprint summary, and a bug triage table — in one
-command, in seconds.
+command, in under two minutes.
 
 ---
 
@@ -58,11 +58,13 @@ On a synthetic 35-minute product sync for a fictional marketplace app, one run p
   (a blocking vendor dependency and thin Android test coverage).
 - **A bug triage table** with severities, P0–P3 priorities, and concrete next actions.
 
-What would take a person a careful hour took the tool a few seconds and a few cents.
+What would take a person a careful hour takes the tool under two minutes and a few cents
+(measured on 13 October 2026: 104 seconds for the full run on this transcript — all four
+documents and the report — with each document written by its own model call).
 
 ## Business value
 
-- **Meeting-to-task time: from ~an hour to under a minute.** The tedious part of product
+- **Meeting-to-task time: from ~an hour to under two minutes.** The tedious part of product
   ops becomes instant, so it actually gets done — every time, consistently.
 - **Nothing falls through the cracks.** Decisions, owners, and bugs are captured
   structurally instead of living in someone's memory or a forgotten notes doc.
@@ -78,10 +80,106 @@ What would take a person a careful hour took the tool a few seconds and a few ce
 - **Judgment about scope:** a focused, polished tool that solves one real problem well,
   rather than an over-built SaaS.
 
+## Measuring it
+
+Since this case study was first written, the tool learned to read the ClickUp board
+before it writes: every point becomes a new task, a comment on a task that already
+exists, or a question for a person, and that plan is applied only when someone clicks.
+Deciding *what to do to the board* is the hard part, so it is what is measured most.
+
+Three harnesses, each answering a different question. All of them run against labels a
+delivery manager validated by hand, and all of them are allowed to fail.
+
+| harness | question | latest |
+|---|---|---|
+| `evals/run_eval.py` | was the work found? | recall 100%, precision 100% on three transcripts |
+| `evals/eval_decisions.py` | new work or an update to something that exists? | 100% decision, 100% target |
+| `evals/eval_effects.py` | what should actually happen to the board? | 64% / 67% / 50% |
+
+The third is new and deliberately red. Two of the five effects it scores —
+`verify_deadline` and `verify_status` — have no implementation at all, so they report
+zero on purpose: the metric exists before the feature, so the feature has something to
+move.
+
+It also measures what a messy board costs. On the same transcript with the same labels,
+a board carrying three duplicate tasks left by old test runs scores **55%** against
+**64%** for the same board with the duplicates removed — and the failure is legible:
+the agent matches the copy instead of the original and escalates rather than acting.
+
+Two honest caveats, both written into the results files rather than left to be
+discovered: effect accuracy folds judgement together with confidence calibration (in
+four of ten misses the agent decided exactly what the labels expect and escalated anyway,
+below the gate), and the decision eval's ten points do not reach two of the rules its own
+prompt now carries.
+
+One full run of the effect eval saves the agent's raw matches to
+`evals/effect_decisions.json`. The file is not in the repository — producing it takes one
+run with an API key — but once it exists, asking where the gate belongs is a re-read
+rather than another run: the model call is the expensive half of that harness and the
+confidence gate is the cheap one.
+
+```bash
+python evals/eval_effects.py                      # one full run: calls the model, saves the raw matches
+python evals/eval_effects.py --sweep              # then: accuracy across gates 0.50-0.95, no API calls
+python evals/eval_effects.py --replay --threshold 0.7
+```
+
+That matters because calibration is the largest bucket of misses — four of ten — so the
+cheapest available experiment is also the one aimed at the biggest share of the failure.
+The sweep is still scored against the labels it would be tuned on, so it reports what a
+threshold could have bought on this set, not what to set it to.
+
+
+## The apply gate
+
+The pipeline builds a plan and stops. The CLI writes `outputs/board_plan.md` and never
+touches the tracker; the web app shows the same plan and applies it only when a person
+clicks, with anything below the gate opted in item by item. Nothing is written on the
+pipeline's own judgement. That is a decision, not an unfinished feature — and the reason
+is the shape of the misses, not the headline number.
+
+### What the 50–67% is actually made of
+
+Ten misses across the three transcripts, and they are three different things:
+
+| bucket | misses | what happened |
+|---|---|---|
+| calibration | 4 | the agent chose exactly what the labels expect, scored below the 0.8 gate, and escalated anyway |
+| no mechanism | 3 | a `verify_deadline` / `verify_status` point with nothing to express it — each landed as a comment on the **right** task (B2, B1, B2) |
+| judgement | 3 | the agent genuinely matched the wrong thing |
+
+So **three of ten are real errors of judgement.** Counting the agent's underlying intent
+rather than the gated outcome, the same runs read **82% / 83% / 63%**.
+
+Neither number is the honest one alone. Effect accuracy folds judgement together with
+confidence calibration, and quoting only the low figure understates the agent as badly as
+quoting only the high one would flatter it. The pair is the measurement.
+
+### Why the gate stays closed anyway
+
+- **Three judgement errors in ten is still too many to write into a live board.** The
+  calibration misses are safe failures — they escalate to a human. The judgement ones are
+  not: they act confidently on the wrong task.
+- **Two of the five effects do not exist.** `verify_deadline` and `verify_status` (WB-9,
+  WB-18) have no implementation, so a point needing one degrades to a comment. Applying
+  now would silently convert "check this date" into "leave a note".
+- **On a cluttered board the agent aims at the duplicate.** Not hypothetical: the live
+  board carried three duplicate rows from old test runs, and the agent matched the copy
+  instead of the original. Idempotency stops the same effect being applied twice; it does
+  not stop the correct effect landing on the wrong task.
+
+And the number is probably generous. These transcripts are the ones the extraction and
+routing rules were derived from — there is no held-out set. On a meeting the rules have
+never seen, expect lower, not higher. Until a held-out transcript exists, 50–67% is a
+ceiling estimate rather than a floor.
+
+The gate reopens when WB-9 and WB-18 land and the effect eval is re-run against a
+transcript that did not shape the rules.
+
 ## Links
 
-- **Live report (visual):** _(GitHub Pages — enabled when the repo goes public)_
-- **Code:** github.com/natalie-chmurova/ai-product-ops-workbench
-- **Demo video:** _(Loom — to be recorded)_
+- **Live demo:** [natalie-chmurova.github.io/ai-product-ops-workbench](https://natalie-chmurova.github.io/ai-product-ops-workbench/)
+- **n8n version:** [the agentic workflow, step by step](https://natalie-chmurova.github.io/ai-product-ops-workbench/n8n-case.html)
+- **Code:** [github.com/natalie-chmurova/ai-product-ops-workbench](https://github.com/natalie-chmurova/ai-product-ops-workbench)
 
 > Built as a portfolio project. All demo data is synthetic — a fictional team and product.

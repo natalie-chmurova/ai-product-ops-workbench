@@ -14,7 +14,8 @@ from pathlib import Path
 
 from anthropic import Anthropic
 
-# Newest Claude model at time of writing.
+# The model every published eval number was measured on. A newer model means re-running
+# the evals, so moving off it is a deliberate change rather than an upgrade.
 MODEL = "claude-sonnet-5"
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
