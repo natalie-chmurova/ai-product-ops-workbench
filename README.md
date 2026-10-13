@@ -110,8 +110,8 @@ outputs/            generated artifacts (git-ignored)
 
 ## Measuring it
 
-Three harnesses, each answering a different question. All of them run against labels a
-delivery manager validated by hand, and all of them are allowed to fail.
+Three harnesses, each answering a different question, all run against labels a
+delivery manager validated by hand — and all of them allowed to fail.
 
 | harness | question | latest |
 |---|---|---|
@@ -119,82 +119,10 @@ delivery manager validated by hand, and all of them are allowed to fail.
 | `evals/eval_decisions.py` | new work or an update to something that exists? | 100% decision, 100% target |
 | `evals/eval_effects.py` | what should actually happen to the board? | 64% / 67% / 50% |
 
-The third is new and deliberately red. Two of the five effects it scores —
-`verify_deadline` and `verify_status` — have no implementation at all, so they report
-zero on purpose: the metric exists before the feature, so the feature has something to
-move.
-
-It also measures what a messy board costs. On the same transcript with the same labels,
-a board carrying three duplicate tasks left by old test runs scores **55%** against
-**64%** for the same board with the duplicates removed — and the failure is legible:
-the agent matches the copy instead of the original and escalates rather than acting.
-
-Two honest caveats, both written into the results files rather than left to be
-discovered: effect accuracy folds judgement together with confidence calibration (in
-four of ten misses the agent decided exactly what the labels expect and escalated anyway,
-below the gate), and the decision eval's ten points do not reach two of the rules its own
-prompt now carries.
-
-The effect eval keeps its raw decisions in `evals/effect_decisions.json`. The model call is
-the expensive half of that harness and the confidence gate is the cheap one, so asking
-where the gate belongs is a re-read rather than another run:
-
-```bash
-python evals/eval_effects.py --sweep              # accuracy across gates 0.50-0.95, no API calls
-python evals/eval_effects.py --replay --threshold 0.7
-```
-
-That matters because calibration is the largest bucket of misses — four of ten — so the
-cheapest available experiment is also the one aimed at the biggest share of the failure.
-The sweep is still scored against the labels it would be tuned on, so it reports what a
-threshold could have bought on this set, not what to set it to.
-
-
-## The apply gate
-
-The pipeline builds a plan and stops. The CLI writes `outputs/board_plan.md` and never
-touches the tracker; the web app shows the same plan and applies it only when a person
-clicks, with anything below the gate opted in item by item. Nothing is written on the
-pipeline's own judgement. That is a decision, not an unfinished feature — and the reason
-is the shape of the misses, not the headline number.
-
-### What the 50–67% is actually made of
-
-Ten misses across the three transcripts, and they are three different things:
-
-| bucket | misses | what happened |
-|---|---|---|
-| calibration | 4 | the agent chose exactly what the labels expect, scored below the 0.8 gate, and escalated anyway |
-| no mechanism | 3 | a `verify_deadline` / `verify_status` point with nothing to express it — each landed as a comment on the **right** task (B2, B1, B2) |
-| judgement | 3 | the agent genuinely matched the wrong thing |
-
-So **three of ten are real errors of judgement.** Counting the agent's underlying intent
-rather than the gated outcome, the same runs read **82% / 83% / 63%**.
-
-Neither number is the honest one alone. Effect accuracy folds judgement together with
-confidence calibration, and quoting only the low figure understates the agent as badly as
-quoting only the high one would flatter it. The pair is the measurement.
-
-### Why the gate stays closed anyway
-
-- **Three judgement errors in ten is still too many to write into a live board.** The
-  calibration misses are safe failures — they escalate to a human. The judgement ones are
-  not: they act confidently on the wrong task.
-- **Two of the five effects do not exist.** `verify_deadline` and `verify_status` (WB-9,
-  WB-18) have no implementation, so a point needing one degrades to a comment. Applying
-  now would silently convert "check this date" into "leave a note".
-- **On a cluttered board the agent aims at the duplicate.** Not hypothetical: the live
-  board carried three duplicate rows from old test runs, and the agent matched the copy
-  instead of the original. Idempotency stops the same effect being applied twice; it does
-  not stop the correct effect landing on the wrong task.
-
-And the number is probably generous. These transcripts are the ones the extraction and
-routing rules were derived from — there is no held-out set. On a meeting the rules have
-never seen, expect lower, not higher. Until a held-out transcript exists, 50–67% is a
-ceiling estimate rather than a floor.
-
-The gate reopens when WB-9 and WB-18 land and the effect eval is re-run against a
-transcript that did not shape the rules.
+The third is deliberately red, and it is why nothing is written to a board without a
+person clicking Apply: three of its ten misses are real errors of judgement. What the
+numbers are made of, what a messy board costs, and why the gate stays closed are in the
+[case study](CASE_STUDY.md#measuring-it).
 
 ## Notes
 
@@ -202,3 +130,4 @@ transcript that did not shape the rules.
 - Task descriptions follow a real ClickUp ticket structure
   (Goal / Context / What needs to be done / Acceptance criteria).
 - Built as a portfolio project demonstrating AI-assisted product operations.
+- Licensed under [MIT](LICENSE).
